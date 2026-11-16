@@ -8,8 +8,14 @@
 動くもの: サインイン (MSAL) / 登録ユーザーの判定 / ロール権限表 / User Management /
 Role Permissions / Setup (User Profile テーブルのみ) / ヘッダー・サイドレール / ダーク
 モード / 招待メール。
-**未実装 (プレースホルダー)**: `/invoices`, `/customers`。請求書・取引先・明細の
-Dataverse テーブルは未設計 - テーブルは Admin > Setup からだけ作る。
+**`/invoices` (段階 1, 2026-11-16)**: 立替費用 Excel (シート `請求_出向者立替費用`) をアップロード →
+表題 (INVOICE / DEBIT NOTE) を行ごとに選ぶ → 請求書 PDF を作る。部品は `lib/invoice/` (`claim-sheet` =
+Excel 読込、`build-pdf` = PDF、`invoice-number` = `HYM1AC{会計年度}-{連番}`、会計年度は 4/1 始まり)。
+**請求書自体はまだ何も保存しない**。連番 (3 桁、`-182`) は手入力。
+**取引先マスタ**: Admin > Customers (`/admin/customers`, 行 `admin-customers`) で登録し、Dataverse の `hi_invoicecustomer`
+(Admin > Setup > Invoice Customer table で作る。組織所有) に入る。`code` が Excel の「Claim to」と一致する鍵で、重複不可。
+表が空のときは `customers-seed.ts` の既知 3 社 (HLAM / HOGV / HOMS-J) をボタンで投入できる。
+**未実装**: 請求書・明細の Dataverse テーブル、PDF とデータの保存、連番の自動採番。
 
 ## Tech Stack
 
@@ -26,6 +32,24 @@ Azure AD / MSAL.js · Lucide · SWR · isomorphic-dompurify · jsPDF + autotable
 3. Dataverse の接続先を決める。**CAPEX と同じ環境を共有するなら `hi_userprofiles` が
    すでにある** - 別環境なら Admin > Setup > User Profile table を実行。
 4. `npm install && npm run dev`。
+
+## Entra アプリ登録の状況 (2026-11-16)
+
+- Invoice Portal 用アプリ登録済み (HOYA Corporation テナント、シングルテナント)。
+  Client ID `a20ad64f-24cb-4c99-a6c2-320611d971f8` / Tenant ID `bf781f77-403a-41b0-bc8d-aef742fcc54e`。
+  SPA リダイレクト URI は `http://localhost:3000/auth/callback` のみ - **本番 URL は未登録**
+  (決めたら SPA に追加し、`NEXT_PUBLIC_APP_URL` も合わせる)。
+- Dataverse 接続先: `https://md-mgd-env3-payg.crm5.dynamics.com` (CAPEX と同じ環境かは未確認)。
+- **API permissions (すべて Delegated)**: Dynamics CRM `user_impersonation` /
+  Graph `User.Read`・`User.Read.All`・`Mail.Send`。コードが使う Graph 呼び出しは
+  `GET /users` (担当者検索) と `POST /me/sendMail` (招待・通知メール) だけで、これで足りる。
+  `User.ReadBasic.All` は `msal-config.ts` に定義があるだけで未使用。
+  `AZURE_CLIENT_SECRET` は src で未使用 (Application 権限も不要)。
+- **`User.Read.All` は管理者同意が必要**で、本人は「Approval required」になる。**IT 管理者に
+  承認を依頼中。承認されるまでサインインの動作確認はできない。**
+- 将来 PDF を OneDrive / SharePoint に保存する、Teams 通知する等を決めたら
+  `Files.ReadWrite` / `Sites.Selected` / `Mail.ReadWrite` などを個別に追加依頼する
+  (追加するとユーザーは再同意が必要)。
 
 ## 原型から持ち越したもの (整理の候補)
 
@@ -52,5 +76,6 @@ npm run dev | npm run build | npm run lint | npx tsc --noEmit
 
 - テストフレームワークなし。ロジックは使い捨て `.mts` で確かめて消す。
 - 作業はブランチで、完了したら `main` にマージ。
+- **画面の文言は英語** (Excel のシート名 `請求_出向者立替費用` などの固有名だけ日本語のまま)。
 - 金額は `formatAmount()` (`lib/utils/format`) - `toLocaleString()` は必ず `"en-US"` 付き。
 - **返信は日本語で**。

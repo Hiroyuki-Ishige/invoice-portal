@@ -69,7 +69,7 @@ function explain(status: number, attachmentCount = 0): string {
  * marker at the head of the subject is what makes them filterable and sortable
  * without reading the body.
  */
-export const MAIL_SUBJECT_PREFIX = "[Fm Ringi system]";
+export const MAIL_SUBJECT_PREFIX = "[Invoice Portal]";
 
 /**
  * The marker for mail that is **not** about a ringi - the invitation, today.
@@ -81,7 +81,7 @@ export const MAIL_SUBJECT_PREFIX = "[Fm Ringi system]";
  * message with no application number in it, and the first person to notice
  * would go looking for the ringi it was about.
  */
-export const APP_SUBJECT_PREFIX = "[CAPEX Budget]";
+export const APP_SUBJECT_PREFIX = "[Invoice Portal]";
 
 /**
  * Put the marker at the head of a subject, once.

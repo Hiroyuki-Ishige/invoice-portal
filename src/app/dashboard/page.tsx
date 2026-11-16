@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Building2, Settings } from "lucide-react";
+import { FileText, Settings } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { CopyrightNotice } from "@/components/ui/CopyrightNotice";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -22,7 +22,6 @@ export default function DashboardPage() {
 
   const cards = [
     { show: open("invoices"), href: "/invoices", icon: FileText, title: "Invoices", text: "請求書の作成・発行・管理" },
-    { show: open("customers"), href: "/customers", icon: Building2, title: "Customers", text: "取引先マスタ" },
   ].filter((card) => card.show);
 
   return (

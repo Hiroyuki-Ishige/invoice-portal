@@ -189,12 +189,12 @@ export async function updateDataverseSession(request: NextRequest) {
         registration === "deactivated"
           ? {
               error:
-                "This account has been deactivated in CAPEX Budget. Please contact the Administrator.",
+                "This account has been deactivated in Invoice Portal. Please contact the Administrator.",
               code: "ACCOUNT_DEACTIVATED",
             }
           : {
               error:
-                "This account is not registered in CAPEX Budget yet. Please contact the Administrator.",
+                "This account is not registered in Invoice Portal yet. Please contact the Administrator.",
               code: "NOT_REGISTERED",
             },
         { status: 403 }
