@@ -116,7 +116,7 @@ export function describeAccess(input: {
   return { editable, bypasses: false, canEditAnything: editable.length > 0 };
 }
 
-export const INVITE_SUBJECT = "You have access to CAPEX Budget Control";
+export const INVITE_SUBJECT = "You have access to Invoice Portal";
 
 /**
  * The invitation, ready for `sendGraphMail`.
@@ -136,10 +136,10 @@ export function buildInviteMessage(input: InviteMessageInput): { subject: string
 
   const greeting = `Hello ${escapeHtml(firstName)},`;
   const opener = input.invitedBy
-    ? `${escapeHtml(input.invitedBy)} has given you access to <strong>CAPEX Budget Control</strong>, ` +
-      "the CAPEX budget and Ringi approval system."
-    : "You have been given access to <strong>CAPEX Budget Control</strong>, " +
-      "the CAPEX budget and Ringi approval system.";
+    ? `${escapeHtml(input.invitedBy)} has given you access to <strong>Invoice Portal</strong>, ` +
+      "the portal for creating, issuing and managing invoices."
+    : "You have been given access to <strong>Invoice Portal</strong>, " +
+      "the portal for creating, issuing and managing invoices.";
 
   // The scheme is checked, not assumed, and only then escaped. `escapeHtml`
   // stops a string breaking out of the attribute; it does **not** stop the URL
@@ -188,10 +188,10 @@ export function buildInviteMessage(input: InviteMessageInput): { subject: string
         { label: "May read", value: "Every entity's figures" },
       ],
       noticeHtml: notice ? escapeHtml(notice) : undefined,
-      ctaLabel: "Open CAPEX Budget Control",
+      ctaLabel: "Open Invoice Portal",
       ctaHref: link,
       footnote:
-        "Sent by CAPEX Budget Control. Replying to this message will reach the sender, not the app.",
+        "Sent by Invoice Portal. Replying to this message will reach the sender, not the app.",
     }),
   };
 }

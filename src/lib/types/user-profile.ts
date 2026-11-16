@@ -165,7 +165,7 @@ export const ROLE_HINTS: Record<UserRole, string> = {
   admin: "Everything, including this screen",
   faadmin: "Finance & Accounting - by default the IIR approval mark and the Finance admin screens (Admin > Role Permissions)",
   capexadmin: "IIR administrator - by default a User plus Edit on Meeting in MD and IIR Deck (Admin > Role Permissions)",
-  user: "Reads and edits the CAPEX screens",
+  user: "Reads and edits the invoice screens",
 };
 
 /**

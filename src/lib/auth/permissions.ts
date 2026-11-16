@@ -66,10 +66,10 @@ void NO_EDIT;
    offered Edit (review, 2026-10-20; rules 21, 25). */
 const AREAS = [
   { id: "invoices", label: "Invoices", group: "Invoice", href: "/invoices", levels: ALL },
-  { id: "customers", label: "Customers", group: "Master", href: "/customers", levels: ALL },
   { id: "admin-users", label: "User Management", group: "Admin", href: "/admin/users", levels: ALL, adminOnly: true },
   { id: "admin-role-permissions", label: "Role Permissions", group: "Admin", href: "/admin/role-permissions", levels: ALL, adminOnly: true },
   { id: "admin-setup", label: "Setup", group: "Admin", href: "/admin/setup", levels: ALL, adminOnly: true },
+  { id: "admin-customers", label: "Customers", group: "Admin", href: "/admin/customers", levels: ALL, adminOnly: true },
 ] as const satisfies readonly AccessArea[];
 
 /** The id of a row of `ACCESS_AREAS` - what every gate must name. */

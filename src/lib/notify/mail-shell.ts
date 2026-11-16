@@ -486,10 +486,10 @@ export function renderMailShell(input: MailShellInput): string {
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td style="font-family:${FONT_STACK};font-size:15px;font-weight:700;
-                           color:#ffffff;letter-spacing:0.02em">CAPEX Budget Control</td>
+                           color:#ffffff;letter-spacing:0.02em">Invoice Portal</td>
                 <td align="right" style="font-family:${FONT_STACK};font-size:11px;
                            color:#cfe4fa;text-transform:uppercase;letter-spacing:0.08em">
-                  Ringi system
+                  請求書作成ポータル
                 </td>
               </tr>
             </table>

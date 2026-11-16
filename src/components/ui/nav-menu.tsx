@@ -10,7 +10,7 @@
  */
 
 import Link from "next/link";
-import { Home, FileText, Building2, Settings, ExternalLink } from "lucide-react";
+import { Home, FileText, Settings, ExternalLink } from "lucide-react";
 import { useMemo } from "react";
 import { adminDestinationsFor } from "@/components/admin/destinations";
 import { useEffectivePermissions } from "@/hooks/useRolePermissions";
@@ -201,7 +201,6 @@ export function adminGroupFor(role: UserRole, table: PermissionTable): NavGroup[
 export const BASE_MENU_ITEMS: MenuItem[] = [
   { label: "Home", href: "/dashboard", icon: <Home className="w-5 h-5" /> },
   { label: "Invoices", href: "/invoices", icon: <FileText className="w-5 h-5" /> },
-  { label: "Customers", href: "/customers", icon: <Building2 className="w-5 h-5" /> },
 ];
 
 /**

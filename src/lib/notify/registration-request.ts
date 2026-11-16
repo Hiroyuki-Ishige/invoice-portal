@@ -49,15 +49,15 @@ export interface RegistrationRequestInput {
 const ASKS: Record<RegistrationRequestReason, { eyebrow: string; lead: string; detail?: string }> = {
   no_profile: {
     eyebrow: "Registration request",
-    lead: "signed in to <strong>CAPEX Budget Control</strong> and is not registered as a user yet.",
+    lead: "signed in to <strong>Invoice Portal</strong> and is not registered as a user yet.",
   },
   deactivated: {
     eyebrow: "Reactivation request",
-    lead: "signed in to <strong>CAPEX Budget Control</strong>, and their registration is switched off.",
+    lead: "signed in to <strong>Invoice Portal</strong>, and their registration is switched off.",
   },
   not_in_environment: {
     eyebrow: "Registration request",
-    lead: "signed in to <strong>CAPEX Budget Control</strong>, and Dataverse does not recognise their account.",
+    lead: "signed in to <strong>Invoice Portal</strong>, and Dataverse does not recognise their account.",
     detail:
       "A profile in User Management is not enough on its own here: the account also has to be a user " +
       "of the Dataverse environment (its security group) with a security role, or every screen still " +
@@ -103,7 +103,7 @@ export function buildRegistrationRequest(
       ctaLabel: "Open User Management",
       ctaHref: link,
       footnote:
-        "Sent from the requester's own mailbox by CAPEX Budget Control. Replying reaches them, not the app.",
+        "Sent from the requester's own mailbox by Invoice Portal. Replying reaches them, not the app.",
     }),
   };
 }
