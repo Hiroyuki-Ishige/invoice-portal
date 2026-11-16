@@ -21,7 +21,7 @@ export default function DashboardPage() {
   const admin = adminDestinationsFor(role, permissions);
 
   const cards = [
-    { show: open("invoices"), href: "/invoices", icon: FileText, title: "Invoices", text: "請求書の作成・発行・管理" },
+    { show: open("invoices"), href: "/invoices", icon: FileText, title: "Invoices", text: "Create, issue and manage invoices" },
   ].filter((card) => card.show);
 
   return (
@@ -30,7 +30,7 @@ export default function DashboardPage() {
       <main className="flex-1 py-8 px-4 md:px-6">
         <div className="max-w-5xl mx-auto">
           <h1 className="text-2xl md:text-3xl font-bold text-[#2D2A28] dark:text-white">Invoice Portal</h1>
-          <p className="text-base md:text-lg text-[#B0B5B5] mt-2 mb-6">請求書作成ポータル</p>
+          <p className="text-base md:text-lg text-[#B0B5B5] mt-2 mb-6">Create and manage invoices</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
             {cards.map(({ href, icon: Icon, title, text }) => (

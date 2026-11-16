@@ -1,5 +1,5 @@
 /**
- * **The app's name, "Invoice Portal" (請求書作成ポータル).** One component for
+ * **The app's name, "Invoice Portal".** One component for
  * every place on screen that shows the name - the header, the side menu, the
  * landing footer, the sign-in and access-denied screens, the tab - so those
  * cannot come to spell it two ways (rule 20).
@@ -11,7 +11,7 @@
 /** Where the name must be plain text - the browser tab, a mail. */
 export const APP_NAME = "Invoice Portal";
 /** What the name stands for, where there is room to say it. */
-export const APP_TAGLINE = "請求書作成ポータル";
+export const APP_TAGLINE = "Create and manage invoices";
 
 export function AppName({ className = "" }: { className?: string }) {
   return (

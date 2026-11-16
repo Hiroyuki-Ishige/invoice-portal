@@ -6,7 +6,9 @@ import { carriesAuthResponse, signInHref } from "@/lib/auth/return-path";
 import {
   DollarSign,
   Factory,
-  Cog,
+  ArrowRight,
+  FilePenLine,
+  FileText,
   TrendingUp,
   BarChart3,
   LogIn,
@@ -16,6 +18,22 @@ import { CopyrightNotice } from "@/components/ui/CopyrightNotice";
 import { AppName } from "@/components/ui/AppName";
 import { BusyRing } from "@/components/ui/Loading";
 import { useAuth } from "@/components/providers/AuthProvider";
+
+function HeroConnector({ from, to, delayed = false }: { from: string; to: string; delayed?: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className="relative w-4 sm:w-8 md:w-12 h-0.5"
+      style={{ backgroundImage: `linear-gradient(to right, ${from}, ${to})` }}
+    >
+      <ArrowRight
+        className={`${delayed ? "animate-hero-travel-delayed" : "animate-hero-travel"} absolute top-1/2 left-0 w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 opacity-0`}
+        style={{ color: to }}
+        strokeWidth={2.5}
+      />
+    </div>
+  );
+}
 
 function subscribeToHash(onChange: () => void): () => void {
   window.addEventListener("hashchange", onChange);
@@ -50,36 +68,36 @@ export default function Home() {
         <section className="py-16 md:py-24 px-4 md:px-6 bg-gradient-to-b from-[#f8fafc] to-white dark:from-[#1a1918] dark:to-[#2D2A28]">
           <div className="max-w-5xl mx-auto text-center">
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-[#2D2A28] dark:text-white mb-4 md:mb-6 leading-tight">
-              請求書を、{" "}
+              Invoices,{" "}
               <span className="text-[#0057BC]">
-                かんたんに作成
+                made simple
               </span>
             </h1>
             <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-[#B0B5B5] mb-8 md:mb-12 max-w-3xl mx-auto leading-relaxed px-2">
-              請求書の作成・発行・管理をひとつの画面で。取引先、明細、金額計算まで、チーム全員で使えるポータルです。
+              Create, issue and manage invoices in one place - customers, line items and amounts, for the whole team.
             </p>
 
-            {/* Simple Animation - Three Icons */}
+            {/* Create -> Invoice -> Payment. An arrow travels along each connector in
+                turn (the second half a cycle behind the first), so the row reads
+                as an invoice being written and then paid. */}
             <div className="flex items-center justify-center gap-3 sm:gap-6 md:gap-10 mb-6 md:mb-8 py-4 md:py-8">
-              {/* Factory Icon */}
-              <div className="animate-hero-float w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 bg-[#0057BC]/10 rounded-xl md:rounded-2xl flex items-center justify-center">
-                <Factory className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#0057BC]" />
+              {/* Create */}
+              <div className="w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 bg-[#0057BC]/10 rounded-xl md:rounded-2xl flex items-center justify-center">
+                <FilePenLine className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#0057BC]" />
               </div>
 
-              {/* Arrow */}
-              <div className="w-4 sm:w-8 md:w-12 h-0.5 bg-gradient-to-r from-[#0057BC] to-[#00A3DE]" />
+              <HeroConnector from="#0057BC" to="#00A3DE" />
 
-              {/* Gear Icon */}
+              {/* The invoice */}
               <div className="w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 bg-[#00A3DE]/10 rounded-xl md:rounded-2xl flex items-center justify-center">
-                <Cog className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#00A3DE] animate-spin" style={{ animationDuration: '10s' }} />
+                <FileText className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#00A3DE]" />
               </div>
 
-              {/* Arrow */}
-              <div className="w-4 sm:w-8 md:w-12 h-0.5 bg-gradient-to-r from-[#00A3DE] to-[#0057BC]" />
+              <HeroConnector from="#00A3DE" to="#0057BC" delayed />
 
-              {/* Chart Icon */}
-              <div className="animate-hero-float-delayed w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 bg-[#0057BC]/10 rounded-xl md:rounded-2xl flex items-center justify-center">
-                <BarChart3 className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#0057BC]" />
+              {/* Get paid */}
+              <div className="w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 bg-[#0057BC]/10 rounded-xl md:rounded-2xl flex items-center justify-center">
+                <DollarSign className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#0057BC]" />
               </div>
             </div>
 
@@ -139,10 +157,10 @@ export default function Home() {
 
             {/* Feature Pills */}
             <div className="flex flex-wrap justify-center gap-3">
-              <FeaturePill icon={<Factory className="w-4 h-4" />} text="取引先" />
-              <FeaturePill icon={<DollarSign className="w-4 h-4" />} text="請求書作成" />
-              <FeaturePill icon={<BarChart3 className="w-4 h-4" />} text="発行状況の管理" />
-              <FeaturePill icon={<TrendingUp className="w-4 h-4" />} text="集計・レポート" />
+              <FeaturePill icon={<Factory className="w-4 h-4" />} text="Customers" />
+              <FeaturePill icon={<DollarSign className="w-4 h-4" />} text="Invoice creation" />
+              <FeaturePill icon={<BarChart3 className="w-4 h-4" />} text="Issue tracking" />
+              <FeaturePill icon={<TrendingUp className="w-4 h-4" />} text="Reports" />
             </div>
           </div>
         </section>

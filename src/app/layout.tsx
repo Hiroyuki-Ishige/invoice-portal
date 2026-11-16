@@ -15,7 +15,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: `${APP_NAME} - ${APP_TAGLINE}`,
-  description: "請求書作成ポータル - create and manage invoices",
+  description: "Create and manage invoices",
 };
 
 /**
