@@ -300,40 +300,44 @@ body {
 }
 
 /*
- * Landing hero - the Factory and Chart tiles either side of the gear.
- *
- * The gear spins, so the two tiles it sits between read as broken rather than
- * still. A slow float is the smallest motion that says "alive": 6px, which is
- * under the tile's own corner radius, so nothing appears to leave its place.
- * The two are offset half a cycle apart (`.animate-hero-float-delayed`), or
- * they rise and fall together and the row looks like one object bouncing.
- *
- * The 0.3s house rule is for a transition between two states; this is a loop,
- * and at 0.3s it would be a twitch.
+ * The arrow that runs along a connector in the landing hero: an invoice moving
+ * from one step to the next. It crosses in the first half of the cycle and
+ * rests invisible in the second, and the second connector starts half a cycle
+ * later, so only one arrow is ever moving - create, then send.
  */
-@keyframes heroFloat {
-  0%,
+@keyframes heroTravel {
+  0% {
+    left: 0;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+  }
+  8% {
+    opacity: 1;
+  }
+  42% {
+    opacity: 1;
+  }
+  50%,
   100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
+    left: 100%;
+    opacity: 0;
+    transform: translate(-50%, -50%);
   }
 }
 
-.animate-hero-float,
-.animate-hero-float-delayed {
-  animation: heroFloat 3s ease-in-out infinite;
+.animate-hero-travel,
+.animate-hero-travel-delayed {
+  animation: heroTravel 3s ease-in-out infinite;
 }
 
-.animate-hero-float-delayed {
+.animate-hero-travel-delayed {
   animation-delay: 1.5s;
 }
 
 /* Somebody who has asked the OS for less motion gets none of it. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-hero-float,
-  .animate-hero-float-delayed {
+  .animate-hero-travel,
+  .animate-hero-travel-delayed {
     animation: none;
   }
 }

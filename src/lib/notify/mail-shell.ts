@@ -489,7 +489,7 @@ export function renderMailShell(input: MailShellInput): string {
                            color:#ffffff;letter-spacing:0.02em">Invoice Portal</td>
                 <td align="right" style="font-family:${FONT_STACK};font-size:11px;
                            color:#cfe4fa;text-transform:uppercase;letter-spacing:0.08em">
-                  請求書作成ポータル
+                  Create and manage invoices
                 </td>
               </tr>
             </table>
