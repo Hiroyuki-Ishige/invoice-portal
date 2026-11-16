@@ -1,0 +1,562 @@
+@import "tailwindcss";
+
+/*
+  Tailwind v4 resolves `dark:` against `prefers-color-scheme` by default, and no
+  button can change the operating system's setting. Every `dark:` class in this
+  app therefore followed the OS and ignored the moon in the header, which had
+  been toggling a `.dark` class that nothing was listening for - a control that
+  changed its own icon and nothing else.
+
+  Pointed at the class instead, so the toggle is what decides. The OS setting is
+  still the *starting* point: the script in layout.tsx applies it on a first
+  visit, and only a deliberate choice overrides it.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #2D2A28;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+/*
+  On `.dark` and not on the media query, deliberately. These two variables paint
+  the page behind everything else, so if they followed the OS while the utility
+  classes followed the class, choosing light on a dark-set machine would give a
+  dark page under light cards.
+*/
+.dark {
+  --background: #2D2A28;
+  --foreground: #ffffff;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Dashboard fade-in animation (syncs with 2s scroll) */
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dashboard fade-out animation */
+@keyframes fadeOutUp {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+/*
+ * **What the dead `animate-in fade-in` / `zoom-in-95` / `slide-in-from-top-*`
+ * classes were reaching for**, as real keyframes (rule 15; 2026-10-20). Used
+ * the way `fadeInUp` already is - `animate-[fadeIn_0.3s_ease-in-out]` - so a
+ * grep for the dead spelling finds only the dead spelling:
+ *
+ * - `fadeIn`: a backdrop, a banner, anything that should just arrive.
+ * - `popIn`: a dialog's card, from 95% (what `zoom-in-95` meant).
+ * - `dropIn`: a dropdown or a row of controls, 4px down from where it settles
+ *   (`slide-in-from-top-1`). `fadeInUp` covers `slide-in-from-bottom-*`.
+ */
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * **The frosted veil over a screen that is re-reading itself.**
+ *
+ * Two properties, deliberately, and they are not the same thing: `opacity`
+ * fades the veil in, and `backdrop-filter` is animated from `blur(0)` so the
+ * page behind it goes soft rather than snapping out of focus. Animating only
+ * the opacity leaves the blur switching on at full strength under a
+ * half-transparent wash, which reads as a rendering fault.
+ *
+ * 0.3s ease-in-out, like everything else here. There is no fade *out*: the veil
+ * is unmounted the moment the data lands, and holding it for another 300ms over
+ * figures that are already correct is 300ms of a screen lying about being busy.
+ *
+ * Real keyframes, because `animate-in` / `fade-in` do nothing in this app -
+ * that package is not a dependency (rule 15).
+ */
+@keyframes veilIn {
+  0% {
+    opacity: 0;
+    -webkit-backdrop-filter: blur(0px);
+    backdrop-filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+  }
+}
+
+/* **Prefix first, standard last, and that order is load-bearing.** Written the
+   other way round the optimiser kept only `-webkit-backdrop-filter` and dropped
+   the standard property outright, so `getComputedStyle().backdropFilter` read
+   `none` and Firefox, which has never taken the prefix, would have had no blur
+   at all. The compiled sheet is the only witness to that (rule 23). */
+.loading-veil {
+  animation: veilIn 0.3s ease-in-out forwards;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+/* Somebody who has asked for less motion gets the veil, not the transition. */
+@media (prefers-reduced-motion: reduce) {
+  .loading-veil {
+    animation: none;
+  }
+}
+
+/*
+ * "Look here" - a ring that pulses three times around one field and stops.
+ *
+ * Used where a ringi is missing the one thing that decides who may change it
+ * (an applicant): without it the next upload or save is refused, and the
+ * refusal used to be the first anybody heard of it (2026-10-14).
+ *
+ * Cheap on purpose: one empty span, opacity and transform only, so the
+ * compositor runs it with no layout or paint per frame, and it ends - an
+ * endless pulse is a screen that never stops asking. Replayed by remounting
+ * the span (a new React `key`), not by toggling a class. HOYA Blue, Cyan Blue
+ * in dark mode: a prompt, not a refusal, so never red (rule 33). The ring is a
+ * border, so its contrast is what counts - #0057BC on white is 6.6:1, #00A3DE
+ * on slate-800 5.5:1, both over the 3:1 floor.
+ */
+@keyframes attentionRing {
+  0% {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.attention-ring {
+  position: absolute;
+  inset: -4px;
+  border: 2px solid #0057bc;
+  border-radius: 12px;
+  pointer-events: none;
+  opacity: 0;
+  animation: attentionRing 1.2s ease-in-out 3;
+}
+
+.dark .attention-ring {
+  border-color: #00a3de;
+}
+
+/* Less motion asked for: the ring stays, still, for as long as it is rendered. */
+@media (prefers-reduced-motion: reduce) {
+  .attention-ring {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/*
+ * **"This is the button you press" and "this is where the ringi stands"** -
+ * a slow glow that does not stop (asked for 2026-10-20, after an Approver read
+ * "Your turn" beside a button that was not theirs and wrote that there was no
+ * approval button at all).
+ *
+ * It does not stop, which `.attention-ring` above deliberately does - that one
+ * points at a missing field, this one at the reader's own decision, and the
+ * owner asked for it to keep showing. So it is made to be ignorable: 3.2s a
+ * breath, never brighter than a soft halo, nothing that moves. Opacity only,
+ * on a pseudo-element or an empty span, so the compositor runs it with no
+ * layout or paint per frame.
+ *
+ * - `.turn-pulse` - on a decision button. **Only while it is not `:disabled`**
+ *   (rule 39 - ask the state, not a prop): a glowing button that cannot be
+ *   pressed is the exact misreading this exists to end.
+ * - `.stage-pulse` - a 4px ring 6px **outside** the current stage's card
+ *   (2px until the owner asked for it twice as thick, the same day), because
+ *   a 2px HOYA Blue line on the box itself already means "you can type in
+ *   this box" (`.ringi-form`). Offset, rounded and breathing, it is a
+ *   different shape from any input, and reads as a thicker edge. Also round
+ *   the points-to-check list while it has anything in it (`LiveCheckStrip`).
+ *
+ * HOYA Blue, Cyan Blue in dark mode (rule 33). Less motion asked for: both
+ * stay lit, still.
+ */
+@keyframes turnPulse {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.turn-pulse:not(:disabled)::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: calc(0.5rem + 4px);
+  box-shadow:
+    0 0 0 4px rgba(0, 87, 188, 0.45),
+    0 0 14px 4px rgba(0, 87, 188, 0.4);
+  pointer-events: none;
+  animation: turnPulse 3.2s ease-in-out infinite;
+}
+
+.dark .turn-pulse:not(:disabled)::after {
+  box-shadow:
+    0 0 0 4px rgba(0, 163, 222, 0.5),
+    0 0 14px 4px rgba(0, 163, 222, 0.4);
+}
+
+.stage-pulse {
+  position: absolute;
+  inset: -6px;
+  border: 4px solid #0057bc;
+  border-radius: calc(0.75rem + 6px);
+  pointer-events: none;
+  animation: turnPulse 3.2s ease-in-out infinite;
+}
+
+.dark .stage-pulse {
+  border-color: #00a3de;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-pulse:not(:disabled)::after,
+  .stage-pulse {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/*
+ * Indeterminate progress bar - the consistency check.
+ *
+ * The work is one request with no progress to report (OCR then a model call),
+ * so the bar says "running", not "42% done". A percentage would have to be
+ * invented, and an invented one always stalls at 90%.
+ */
+@keyframes indeterminateSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.animate-indeterminate {
+  animation: indeterminateSlide 1.4s ease-in-out infinite;
+}
+
+/*
+ * Landing hero - the Factory and Chart tiles either side of the gear.
+ *
+ * The gear spins, so the two tiles it sits between read as broken rather than
+ * still. A slow float is the smallest motion that says "alive": 6px, which is
+ * under the tile's own corner radius, so nothing appears to leave its place.
+ * The two are offset half a cycle apart (`.animate-hero-float-delayed`), or
+ * they rise and fall together and the row looks like one object bouncing.
+ *
+ * The 0.3s house rule is for a transition between two states; this is a loop,
+ * and at 0.3s it would be a twitch.
+ */
+@keyframes heroFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-hero-float,
+.animate-hero-float-delayed {
+  animation: heroFloat 3s ease-in-out infinite;
+}
+
+.animate-hero-float-delayed {
+  animation-delay: 1.5s;
+}
+
+/* Somebody who has asked the OS for less motion gets none of it. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-float,
+  .animate-hero-float-delayed {
+    animation: none;
+  }
+}
+
+/*
+ * Printing the IIR summary onto A4 landscape **paper**.
+ *
+ * Distinct from the slide preview further down this file, which draws 16:9
+ * PowerPoint slides on screen and is what the Print button actually opens.
+ * This path is reached only by Cmd/Ctrl+P, and it exists because a printer
+ * takes paper: A4 landscape is the shape of the thing coming out of it.
+ *
+ * What leaves the browser has to be the table and nothing else. The chrome is
+ * hidden with Tailwind's `print:` variant where it lives; the rules a utility
+ * class cannot express live here.
+ */
+@media print {
+  @page {
+    size: A4 landscape;
+    /* Narrow: the table is the document, and every millimetre of margin is a
+       millimetre the Explanation column has to wrap into. */
+    margin: 8mm;
+  }
+
+  /*
+   * Browsers drop background colours when printing, which would take the blue
+   * Grand Total band and the column header with them - the two rows that tell
+   * you what you are looking at.
+   */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  /*
+   * **Every column prints, whatever the paper measures.**
+   *
+   * The table hides columns by breakpoint - Entity at `sm`, FQ1/FQ2 at `md`,
+   * FQ3/FQ4 at `lg` - and a printed page has a width, so those queries answer.
+   * A4 landscape is 297mm; take Chrome's default margins off it and the layout
+   * width lands around 766px, which is *under* the 768px `md` boundary by a
+   * couple of pixels. The result was a summary of a budget with no quarters in
+   * it: Entity survived (it only needs 640px), FQ1-FQ4 did not, and the page
+   * still looked plausible - which is the worst way for a column to go missing.
+   *
+   * Forced rather than re-tuned, because chasing the boundary would put the
+   * whole table one margin setting away from silently dropping columns again.
+   * The paper does not scroll and cannot be resized: on a page, every column is
+   * simply wanted.
+   *
+   * This rule is deliberately **unlayered** - Tailwind's utilities live in
+   * `@layer utilities`, and unlayered CSS beats any layer regardless of
+   * specificity, so `hidden` loses here without an `!important` anywhere.
+   */
+  .print-table th,
+  .print-table td {
+    display: table-cell;
+  }
+
+  /*
+   * Repeat the column header on the second page. Two pages is expected here -
+   * a page of figures under no header is not.
+   */
+  thead {
+    display: table-header-group;
+  }
+
+  /* Never split a row down the middle of a page break. */
+  tr {
+    break-inside: avoid;
+  }
+}
+
+/*
+ * The slide-sized tables "Create PPT" measures (`prepareClone` in
+ * `summary/for-iir/slide-layout.ts` adds the class). They were drawn by an
+ * on-screen Print preview too, until that was removed on 2026-09-27.
+ *
+ * A slide is not a window: the same reasoning as the print rule above applies,
+ * because the table is laid out 1220px wide off screen, inside whatever the
+ * browser happens to be, and the table's `hidden md:table-cell` columns answer
+ * to the *window*. Without this, a narrow browser would quietly drop FQ1-FQ4
+ * from the slides.
+ *
+ * Unlayered on purpose - see the note in the print block.
+ */
+.slide-preview th,
+.slide-preview td {
+  display: table-cell;
+
+  /*
+   * No shadows on a slide.
+   *
+   * The Item and IIR columns carry a drop shadow on screen, where they are
+   * sticky and the shadow is what says "this column is floating over the ones
+   * scrolling behind it". A slide does not scroll, so the shadow marks nothing -
+   * it just prints a grey smear down the side of the first column.
+   */
+  box-shadow: none;
+}
+
+/*
+ * Ruled, like a table on a slide.
+ *
+ * On screen the table separates rows with a single hairline under each and
+ * nothing between columns, which is right for a page you scroll and scan. A
+ * slide is read across a room and often reprinted in mono, and unruled columns
+ * of figures are hard to follow along a row at that distance.
+ *
+ * Cool Grey (#B0B5B5) for the body, and white at 35% inside the blue header -
+ * the rule ui-notes.md gives for a separator on a HOYA Blue ground, where a
+ * grey line would disappear.
+ */
+.slide-preview td {
+  border: 1px solid #b0b5b5;
+}
+
+.slide-preview th {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+/*
+ * Drop the 12px spacer columns.
+ *
+ * They exist only to hold the gap the floating column's shadow falls into.
+ * With the shadow gone they are an empty ruled column between Item and
+ * Explanation, which reads as a column somebody forgot to fill.
+ */
+.slide-preview th.w-3,
+.slide-preview td.w-3 {
+  display: none;
+}
+
+/*
+ * **Which boxes on the ringi you can actually type in.**
+ *
+ * Asked for on 2026-09-10, looking at Step 3: every field on that form wore the
+ * same slate hairline, so a budget picker you must fill, a Title you may fill
+ * and a figure you can only read were three boxes of one colour. The rule is
+ * the one the request gave - **the brand line marks an editable box, and
+ * nothing else gets it.**
+ *
+ * ### Why this is a stylesheet rule and not a class on each field
+ *
+ * The ringi form is 25 inputs, 6 textareas and 6 selects across five steps,
+ * plus the person picker, which is one component rendered from eight places. A
+ * shared class would be an allowlist rebuilt field by field, and rule 36 is
+ * about exactly that failure: the next field added to Step 2 would be accepted,
+ * render, and quietly be the one box with no line. A selector cannot miss one.
+ *
+ * ### The `:not()`s carry the whole rule
+ *
+ * `:disabled` is what makes this honest, and it is free: a control inside a
+ * `<fieldset disabled>` - which is how every locked step here is locked -
+ * matches `:disabled` itself, so an approved step drops back to slate with
+ * nothing passed to it. Checkboxes and radios are excluded because a border is
+ * not what draws them.
+ *
+ * `[readonly]` is the one that needed thinking about, because the attribute is
+ * used for two different sentences. The approval comment sets it when the
+ * viewer may not write - a box that is genuinely not theirs, so it must not be
+ * marked. The budget picker sets it to mean *picked, not typed*, while staying
+ * the control you click to choose; that one opts back in with the attribute
+ * below, which is why the attribute is not written as "the picker's div".
+ *
+ * `[data-field-box]` is the one thing a selector cannot find on its own: the
+ * person picker paints a filled box, not an `<input>`, once somebody is chosen.
+ * The component stamps the attribute - and only when it was not handed
+ * `disabled`, which is the half a selector cannot see - while the look stays
+ * here, so there is one spelling of the line and not two (rule 20).
+ *
+ * ### Unlayered on purpose
+ *
+ * Same reason as `.slide-preview` above: Tailwind's utilities live in
+ * `@layer utilities`, and unlayered CSS beats every layer regardless of
+ * specificity - which is what lets this override the `border-slate-200` the
+ * fields already carry without restating it 37 times.
+ *
+ * Measured, not judged (rule 33): HOYA Blue against white is **6.80:1** and
+ * Cyan Blue against slate-800 is **5.08:1**, where the 3:1 WCAG asks of a
+ * non-text boundary is the floor and the slate hairline they replace sits at
+ * **1.23:1** - which is to say it marks nothing, and never did.
+ */
+.ringi-form {
+  --ringi-field-line: #0057bc;
+  --ringi-field-wash: rgba(0, 87, 188, 0.04);
+}
+
+.dark .ringi-form {
+  --ringi-field-line: #00a3de;
+  --ringi-field-wash: rgba(0, 163, 222, 0.08);
+}
+
+/*
+ * **Two pixels and a wash, not a hairline.**
+ *
+ * It shipped at 1px and 70% first and was asked to be bolder the same day
+ * (2026-09-10), which is the right call and worth writing down: this line is
+ * not a border in the decorative sense the rest of the app uses one. It is the
+ * only thing on a five-step form telling somebody which boxes are theirs, so it
+ * has to win against 1px slate hairlines, tinted panels and chips that are
+ * already on the screen. A weight nobody notices marks nothing.
+ *
+ * The wash is deliberately almost nothing - 4% over white - because there are
+ * 25 of these on Step 1 alone. It is there so an *empty* field still reads as a
+ * field when the border alone is off in peripheral vision; any more and the
+ * form turns blue.
+ *
+ * `:not(fieldset:disabled *)` is what closes the marked boxes, and it replaces
+ * a pair of override rules that had to restate the slate they were reverting
+ * to - two spellings of one look, which is rule 20 waiting to happen. A complex
+ * argument in `:not()` is Selectors 4, supported everywhere this app runs.
+ */
+/* stylelint-disable-next-line -- one selector, deliberately not wrapped: a line
+   break inside :not() reads as a descendant combinator to anyone skimming it. */
+.ringi-form :is(input, textarea, select):not(:disabled):not([readonly]):not([type="checkbox"]):not([type="radio"]),
+.ringi-form [data-field-box]:not(fieldset:disabled *) {
+  border-color: var(--ringi-field-line);
+  border-width: 2px;
+  background-color: var(--ringi-field-wash);
+}
