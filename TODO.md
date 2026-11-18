@@ -1,6 +1,6 @@
 # TODO / 開発計画
 
-最終更新: 2026-11-16
+最終更新: 2026-11-18
 
 現状は「原型」。`/invoices` で立替費用 Excel → 請求書 PDF までは動くが、請求書自体は何も保存しない。
 目標は、請求書・明細を Dataverse に保存し、連番を自動採番して、一覧・再発行までできること。
@@ -79,6 +79,19 @@
 - [ ] 金額は `formatAmount()` を使う (`toLocaleString()` は必ず `"en-US"` 付き)
 - [ ] 本番デプロイの方針を決める (Vercel を使うか、環境変数、Entra の本番 URL 登録)
 - [ ] 完了した機能は CLAUDE.md の「状態」を更新する
+
+## 7. Claude の道具 (`.claude/`) の積み残し (2026-11-18 のレビューで出たもの)
+
+- [ ] **Playwright MCP (`playwright-test`) の設定が無い**: `.mcp.json` も `@playwright/test` も無いので、playwright の 3 担当
+  (generator / healer / planner) は動かない。テストを入れると決めたときに、`.mcp.json`・`playwright.config.ts`・`e2e/` を足す。
+  足すときは、ブラウザを専用プロファイルで起動する (普段の Chrome や SSO を使うと、サインインして本物の Dataverse・Graph に届く)
+- [ ] **`/cp` に `allowed-tools` を付けていない**: `Bash(git push:*)` は前方一致で `--force` まで許すため。`--force` / `--no-verify` /
+  `reset --hard` を使わない決まりは、文書 (`cp.md`) に書いてあるだけ。権限の側で絞れる方法があれば、そちらへ移す
+- [ ] **`~/.claude/settings.json` (利用者全体の設定) で、これらの制約が効くかは未確認**: healer の書き込み制限 (hook) と
+  `Agent(...)` の名前の絞り込みが、実際に効くかを一度試す
+- [ ] **`/review-code-invoice-portal` を `-all` で実際に回したことが無い**: 21 体の分け方 (まとまりごとのファイル数) が妥当かを、
+  最初に回したときに確かめる。ユーザー全体の `~/.claude/commands/review-code.md` (`capex-*` を呼ぶ) は別物で、触っていない
+- [ ] **ステップ 3 の実機確認**: 完了通知メールを自分宛に 1 通送って体裁と添付を確かめる (まだ送っていない)
 
 ## 進め方
 

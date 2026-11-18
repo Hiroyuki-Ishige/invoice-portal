@@ -77,7 +77,7 @@ Read する。根拠があるなら、その文書名と節を書く。
 - エラー応答は `handleApiError()`（`lib/utils/api-helpers.ts`）経由か。本番で Dataverse の生の
   本文や秘密をクライアントへ返していないか
 - Setup のルート（`api/admin/setup/*`）は `checkSuperAdmin()` で守られているか。**表や列の作成・変更を、
-  ユーザーの確認なしに自動実行する経路が増えていないか**（CLAUDE.md: テーブルの変更は事前に本人へ確認）。
+  ユーザーの確認なしに自動実行する経路が増えていないか**（TODO.md の「進め方」: Dataverse のテーブル作成・変更は、実行前に必ず本人へ確認する）。
   `DATAVERSE_SOLUTION` の指定を外すと既定ソリューションへ入る点も見る
 - ユーザーテーブルは `hi_invoiceuserprofile`（`USER_PROFILE_ENTITY_SET`）。CAPEX の `hi_userprofile` を
   読み書きしていないか
@@ -96,6 +96,21 @@ Read する。根拠があるなら、その文書名と節を書く。
   （`NotifyPanel`）。発行しただけで送る変更は、判断が要る「要確認」に置く
 - Graph のスコープは `Mail.Send` / `User.Read` / `User.Read.All`（委任）。それ以外を要求する
   コードは、同意の追加が要るうえに読める範囲が広がる。トークンをログや保存に残していないか
+
+### エージェントとコマンドの権限（`.claude/` が対象に含まれるとき）
+
+- `.claude/agents/*.md` の `tools` と、本文の制約の食い違い。**本文の「〜しない」はお願いで、ツールではない。**
+  `Edit` / `Write` / `MultiEdit` / `Bash` / `browser_evaluate` / `test_run` を持つ担当が、`src/`・
+  `CLAUDE.md`・`.claude/` を書き換えられる、サインインして本物の Dataverse や Graph（`Mail.Send`）を
+  叩ける、任意のコードを動かせるのに、frontmatter の `hooks` などで止めていないものがないか。
+  レビュー担当は `Read, Glob, Grep` だけのはず
+- `.claude/commands/*.md` の `allowed-tools`: `git push` / `git reset` / `Bash(...:*)` の前方一致で、
+  引数（`--force`、`--output=`、`--no-verify`）まで許していないか。`Agent` は名前で絞られているか
+- `.claude/settings*.json` の `permissions`（allow / deny）、`.mcp.json` のサーバー、`.claude/hooks/` のスクリプト
+- `/cp` の手順（`.claude/commands/cp.md`）が、レビューの重大・失敗した観点・検証の失敗を迂回して
+  main へ入れる書き方になっていないか
+- `CLAUDE.md` と `.claude/rules/` を、全エージェントが規則として読む。そこに「確認なしでよい」の
+  ような緩める文が足されていないか
 
 ### 秘密情報とブラウザ
 
@@ -117,7 +132,9 @@ Read する。根拠があるなら、その文書名と節を書く。
 3. 確認できなかったこと（例: Dataverse のセキュリティロールで実際に何が見えるか）は、
    確認できなかったと書く
 4. 対象にセキュリティに関わるコードが無ければ（文書だけ、スタイルだけなど）、
-   「セキュリティ上の対象なし」と一行で返す
+   「セキュリティ上の対象なし」と一行で返す。**ただし `.claude/agents/`・`.claude/commands/`・`.claude/skills/`・
+   `.claude/hooks/`・`.claude/settings*.json`・`.mcp.json`・`CLAUDE.md`・`.claude/rules/` は「文書」ではない**
+   （エージェントの権限と、全員が読む規則を決める）。上の節で見る
 
 ## 報告形式
 

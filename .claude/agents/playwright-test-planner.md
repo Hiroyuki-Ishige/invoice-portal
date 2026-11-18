@@ -65,4 +65,4 @@ This project has no test framework yet (CLAUDE.md). In short:
   today those are checked with throwaway `.mts` scripts.
 - Save plans under `specs/`.
 - `browser_run_code_unsafe` is deliberately not in `tools`: it runs any code in the Playwright server on this machine
-  (it can read `.env.local`). Use `browser_evaluate` for checks inside the page.
+  (it can read `.env.local`); `test_run` in the healer runs test files the same way, which is why its writes are limited to `e2e/` and `specs/`. Use `browser_evaluate` for checks inside the page.
