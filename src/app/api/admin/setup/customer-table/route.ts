@@ -46,6 +46,8 @@ const SECONDARY_COLUMNS = [
   stringColumn(F.tradingPartnerId, "Trading Partner ID", L.tradingPartnerId, false),
   stringColumn(F.paymentTerms, "Payment terms", L.paymentTerms, false),
   stringColumn(F.defaultTitles, "Default titles", L.defaultTitles, false),
+  stringColumn(F.notifyTo, "Notify To", L.notifyList, false),
+  stringColumn(F.notifyCc, "Notify Cc", L.notifyList, false),
 ];
 
 function headers(token: string, json = false): Record<string, string> {

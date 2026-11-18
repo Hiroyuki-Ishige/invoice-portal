@@ -70,6 +70,8 @@ const AREAS = [
   { id: "admin-role-permissions", label: "Role Permissions", group: "Admin", href: "/admin/role-permissions", levels: ALL, adminOnly: true },
   { id: "admin-setup", label: "Setup", group: "Admin", href: "/admin/setup", levels: ALL, adminOnly: true },
   { id: "admin-customers", label: "Customers", group: "Admin", href: "/admin/customers", levels: ALL, adminOnly: true },
+  // Not adminOnly: F&A-Admin keeps who is told about an invoice (FINANCE_ADMIN_AREAS).
+  { id: "admin-notifications", label: "Mail Notifications", group: "Admin", href: "/admin/notifications", levels: ALL },
 ] as const satisfies readonly AccessArea[];
 
 /** The id of a row of `ACCESS_AREAS` - what every gate must name. */
@@ -88,7 +90,7 @@ const area = (id: string): AccessArea | undefined => ACCESS_AREAS.find((entry) =
  * The Finance screens F&A-Admin had before this table - **its defaults, not a
  * limit**: Admin > Role Permissions can change every one of them.
  */
-const FINANCE_ADMIN_AREAS: string[] = [];
+const FINANCE_ADMIN_AREAS: string[] = ["admin-notifications"];
 
 /**
  * **The table before anybody saves one - the app as it behaved the day this

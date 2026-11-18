@@ -9,6 +9,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
 import { InvoiceTabs } from "@/components/invoices/InvoiceTabs";
 import { ExcelDropZone } from "@/components/invoices/ExcelDropZone";
+import { NotifyPanel, type NotifyItem } from "@/components/invoices/NotifyPanel";
 import { SavedInvoices } from "@/components/invoices/SavedInvoices";
 import { FIELD, customersFetcher, type Built } from "@/components/invoices/shared";
 import type { Customer } from "@/lib/invoice/customer-record";
@@ -45,6 +46,8 @@ export default function Page() {
   const [issueFailures, setIssueFailures] = useState<string[]>([]);
   const [numbers, setNumbers] = useState<Record<string, string>>({});
   const [built, setBuilt] = useState<Record<string, Built>>({});
+  /** What was just issued, for the notification mails. */
+  const [notifyItems, setNotifyItems] = useState<NotifyItem[]>([]);
 
   // Object URLs hold the file in memory until they are let go.
   const builtRef = useRef(built);
@@ -57,6 +60,7 @@ export default function Page() {
     Object.values(builtRef.current).forEach((b) => URL.revokeObjectURL(b.url));
     setBuilt({});
     setNumbers({});
+    setNotifyItems([]);
   }
 
   async function onFile(file: File) {
@@ -122,6 +126,12 @@ export default function Page() {
         next[invoice.customerCode.toLowerCase()] = { url: URL.createObjectURL(blob), fileName: `${invoice.number}.pdf` };
       }
       setBuilt(next);
+      setNotifyItems(
+        issued.map((invoice) => {
+          const file = next[invoice.customerCode.toLowerCase()];
+          return { invoice, description: DESCRIPTION, fileUrl: file?.url, fileName: file?.fileName };
+        })
+      );
       setNumbers(Object.fromEntries(issued.map((i) => [i.customerCode.toLowerCase(), i.number])));
       await mutate("/api/invoices?status=");
     } catch {
@@ -303,6 +313,10 @@ export default function Page() {
                 )}
               </div>
             </>
+          )}
+
+          {notifyItems.length > 0 && (
+            <NotifyPanel key={notifyItems.map((i) => i.invoice.id).join()} items={notifyItems} customers={customerData?.customers ?? []} />
           )}
 
           <SavedInvoices />

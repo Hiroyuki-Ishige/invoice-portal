@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { Ban, Download, FileSearch, Loader2 } from "lucide-react";
+import { Ban, Download, FileSearch, Loader2, Mail } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { mayCancelInvoices } from "@/lib/types/user-profile";
 import { STATUS_LABELS, type SavedInvoice } from "@/lib/invoice/invoice-record";
 import { formatAmount } from "@/lib/utils/format";
 import { renderPdf, saveBlob } from "@/lib/invoice/render-pdf";
-import { FIELD } from "./shared";
+import { FIELD, customersFetcher } from "./shared";
+import { NotifyPanel, type NotifyItem } from "./NotifyPanel";
 
 /** What the PDF prints when a saved invoice has no line to read the description from. */
 const FALLBACK_DESCRIPTION = "Reimbursement for the expense";
@@ -41,11 +42,51 @@ export function SavedInvoices() {
   const [reason, setReason] = useState("");
   const key = `/api/invoices?status=${status}`;
   const { data, error, isLoading } = useSWR(key, invoicesFetcher, { revalidateOnFocus: false });
+  const { data: customerData } = useSWR("/api/customers", customersFetcher, { revalidateOnFocus: false });
+  /** Invoices ticked for a completion notice, and what the notice panel was prepared with. */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [preparing, setPreparing] = useState(false);
+  const [notifyItems, setNotifyItems] = useState<NotifyItem[] | null>(null);
 
   const needle = query.trim().toLowerCase();
   const shown = (data?.invoices ?? []).filter(
     (i) => !needle || i.number.toLowerCase().includes(needle) || i.customerName.toLowerCase().includes(needle) || i.customerCode.toLowerCase().includes(needle)
   );
+
+  const notifiable = shown.filter((i) => i.status === "issued");
+  const allTicked = notifiable.length > 0 && notifiable.every((i) => selected.has(i.id));
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /** Read each ticked invoice's line, so the mail can say what it was for and its PDF can be rebuilt. */
+  async function prepareNotice() {
+    const picked = (data?.invoices ?? []).filter((i) => selected.has(i.id) && i.status === "issued");
+    if (picked.length === 0) return;
+    setPreparing(true);
+    setMessage("");
+    try {
+      const items = await Promise.all(
+        picked.map(async (invoice): Promise<NotifyItem> => {
+          const response = await fetch(`/api/invoices/${invoice.id}`);
+          const detail = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(detail.error || `${invoice.number} could not be read.`);
+          const description = (detail.lines?.[0]?.description as string | undefined) || FALLBACK_DESCRIPTION;
+          return { invoice, description, fileName: `${invoice.number}.pdf`, makePdf: () => renderPdf(invoice, description) };
+        })
+      );
+      // In the order of the numbers, the way the list reads from the bottom up.
+      setNotifyItems(items.sort((a, b) => a.invoice.number.localeCompare(b.invoice.number)));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "The invoices could not be read.");
+    } finally {
+      setPreparing(false);
+    }
+  }
 
   /** `save` downloads the PDF; `preview` shows it in a new tab. */
   async function download(invoice: SavedInvoice, mode: "save" | "preview" = "save") {
@@ -127,10 +168,54 @@ export function SavedInvoices() {
         </p>
       )}
 
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#0057BC]/30 dark:border-[#00A3DE]/40 bg-[#0057BC]/5 dark:bg-[#00A3DE]/10 px-3 py-2 text-sm">
+          <span className="text-[#2D2A28] dark:text-white">{selected.size} selected</span>
+          <button
+            type="button"
+            onClick={prepareNotice}
+            disabled={preparing}
+            className="inline-flex items-center gap-1.5 text-[#0057BC] dark:text-[#00A3DE] font-medium hover:underline disabled:opacity-50"
+          >
+            {preparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            Send completion notice
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(new Set());
+              setNotifyItems(null);
+            }}
+            className="ml-auto text-slate-500 dark:text-slate-400 hover:underline"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[800px] text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+              <th className="py-2 pr-2 w-8">
+                <input
+                  type="checkbox"
+                  aria-label="Select every issued invoice shown"
+                  className="w-4 h-4 accent-[#0057BC]"
+                  checked={allTicked}
+                  disabled={notifiable.length === 0}
+                  onChange={() =>
+                    setSelected((s) => {
+                      const next = new Set(s);
+                      for (const i of notifiable) {
+                        if (allTicked) next.delete(i.id);
+                        else next.add(i.id);
+                      }
+                      return next;
+                    })
+                  }
+                />
+              </th>
               <th className="py-2 pr-3 font-semibold">Number</th>
               <th className="py-2 pr-3 font-semibold">Title</th>
               <th className="py-2 pr-3 font-semibold">Customer</th>
@@ -145,6 +230,17 @@ export function SavedInvoices() {
           <tbody>
             {shown.map((invoice) => (
               <tr key={invoice.id} className="border-b border-slate-100 dark:border-slate-800 align-middle">
+                <td className="py-2 pr-2">
+                  {invoice.status === "issued" && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${invoice.number}`}
+                      className="w-4 h-4 accent-[#0057BC]"
+                      checked={selected.has(invoice.id)}
+                      onChange={() => toggle(invoice.id)}
+                    />
+                  )}
+                </td>
                 <td className="py-2 pr-3 font-medium tabular-nums text-[#2D2A28] dark:text-white">{invoice.number}</td>
                 <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.title}</td>
                 <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.customerName}</td>
@@ -200,7 +296,7 @@ export function SavedInvoices() {
             ))}
             {!isLoading && !error && shown.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-6 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={8} className="py-6 text-center text-slate-500 dark:text-slate-400">
                   {data?.invoices.length ? "No invoice matches the search." : "No invoice has been issued yet."}
                 </td>
               </tr>
@@ -208,6 +304,15 @@ export function SavedInvoices() {
           </tbody>
         </table>
       </div>
+      {notifyItems && (
+        <NotifyPanel
+          key={notifyItems.map((i) => i.invoice.id).join()}
+          title="Send completion notice"
+          items={notifyItems}
+          customers={customerData?.customers ?? []}
+          onClose={() => setNotifyItems(null)}
+        />
+      )}
       {data?.truncated && (
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Showing the newest {data.limit} invoices. Narrow the status filter to see others.

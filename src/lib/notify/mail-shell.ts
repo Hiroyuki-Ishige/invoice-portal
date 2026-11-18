@@ -213,9 +213,10 @@ export interface MailShellInput {
    * two answers to "where is this" is worse than none.
    */
   currentStep?: ApprovalStep;
-  ctaLabel: string;
+  /** Left out, the message has no button - a notice with nowhere to go. */
+  ctaLabel?: string;
   /** Absolute URL, already escaped by the caller. */
-  ctaHref: string;
+  ctaHref?: string;
   /**
    * **Approve and Send back, as two buttons**, for a message asking its reader
    * to answer a stage. Each opens the ringi with the dialog for that answer
@@ -507,7 +508,13 @@ export function renderMailShell(input: MailShellInput): string {
 
         <tr>
           <td style="padding:0 ${MAIL_PADDING_X}px 28px;font-family:${FONT_STACK}">
-            ${input.decision ? renderDecision(input.decision, input.ctaLabel, input.ctaHref) : renderCta(input.ctaLabel, input.ctaHref)}
+            ${
+              input.ctaLabel && input.ctaHref
+                ? input.decision
+                  ? renderDecision(input.decision, input.ctaLabel, input.ctaHref)
+                  : renderCta(input.ctaLabel, input.ctaHref)
+                : ""
+            }
           </td>
         </tr>
 

@@ -9,6 +9,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
 import { InvoiceTabs } from "@/components/invoices/InvoiceTabs";
 import { ExcelDropZone } from "@/components/invoices/ExcelDropZone";
+import { NotifyPanel, type NotifyItem } from "@/components/invoices/NotifyPanel";
 import { SavedInvoices } from "@/components/invoices/SavedInvoices";
 import { FIELD, customersFetcher, type Built } from "@/components/invoices/shared";
 import type { Customer } from "@/lib/invoice/customer-record";
@@ -46,6 +47,8 @@ export default function Page() {
   const [issueFailures, setIssueFailures] = useState<string[]>([]);
   const [numbers, setNumbers] = useState<Record<number, string>>({});
   const [built, setBuilt] = useState<Record<number, Built>>({});
+  /** What was just issued, for the notification mails. */
+  const [notifyItems, setNotifyItems] = useState<NotifyItem[]>([]);
 
   // Object URLs hold the file in memory until they are let go.
   const builtRef = useRef(built);
@@ -58,6 +61,7 @@ export default function Page() {
     Object.values(builtRef.current).forEach((b) => URL.revokeObjectURL(b.url));
     setBuilt({});
     setNumbers({});
+    setNotifyItems([]);
   }
 
   async function onFile(file: File) {
@@ -126,15 +130,18 @@ export default function Page() {
 
       const nextBuilt: Record<number, Built> = {};
       const nextNumbers: Record<number, string> = {};
+      const nextNotify: NotifyItem[] = [];
       for (const [n, invoice] of issued.entries()) {
         const row = creatable[itemIndexes[n]];
         if (!row) continue;
         const blob = await renderPdf(invoice, row.line.description);
         nextBuilt[row.index] = { url: URL.createObjectURL(blob), fileName: `${invoice.number}.pdf` };
         nextNumbers[row.index] = invoice.number;
+        nextNotify.push({ invoice, description: row.line.description, fileUrl: nextBuilt[row.index].url, fileName: `${invoice.number}.pdf` });
       }
       setBuilt(nextBuilt);
       setNumbers(nextNumbers);
+      setNotifyItems(nextNotify);
       await mutate("/api/invoices?status=");
     } catch {
       setError("Something went wrong while issuing the invoices. Check the list below before trying again.");
@@ -323,6 +330,10 @@ export default function Page() {
                 )}
               </div>
             </>
+          )}
+
+          {notifyItems.length > 0 && (
+            <NotifyPanel key={notifyItems.map((i) => i.invoice.id).join()} items={notifyItems} customers={customerData?.customers ?? []} />
           )}
 
           <SavedInvoices />

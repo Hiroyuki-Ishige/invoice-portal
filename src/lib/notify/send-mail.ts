@@ -21,6 +21,7 @@ import {
   type RegistrationRequestInput,
 } from "./registration-request";
 import { mailContentWidth } from "./mail-shell";
+import { buildInvoiceNotice, type InvoiceNoticeInput } from "./invoice-notice";
 
 const GRAPH_SEND_MAIL = "https://graph.microsoft.com/v1.0/me/sendMail";
 
@@ -284,4 +285,33 @@ export async function sendRegistrationRequest(
 ): Promise<SendOutcome> {
   const { subject, html } = buildRegistrationRequest({ ...request, origin: window.location.origin });
   return sendGraphMail({ subject, html, to, subjectPrefix: APP_SUBJECT_PREFIX }, graphToken);
+}
+
+/**
+ * Tell a site's accounting that invoices were issued to it. **The one way that mail is sent.**
+ *
+ * Sent from the signed-in user's own mailbox, like the invitation, after they have seen who it
+ * goes to. `to` and `cc` are the customer's addresses (Admin > Mail Notifications), screened by
+ * the same tenant rule as every other mail. `pdfs` are the invoices' files, when they go along.
+ */
+export async function sendInvoiceNotice(
+  notice: Omit<InvoiceNoticeInput, "attached">,
+  to: string[],
+  cc: string[],
+  pdfs: GraphFileAttachment[],
+  graphToken: string | null
+): Promise<SendOutcome> {
+  const { subject, html } = buildInvoiceNotice({ ...notice, attached: pdfs.length > 0 });
+  const person = (email: string) => ({ name: email, email });
+  return sendGraphMail(
+    {
+      subject,
+      html,
+      to: to.map(person),
+      cc: cc.map(person),
+      attachments: pdfs,
+      subjectPrefix: APP_SUBJECT_PREFIX,
+    },
+    graphToken
+  );
 }
