@@ -25,6 +25,9 @@ export const CUSTOMER_FIELDS = {
   paymentTerms: "hi_paymentterms",
   /** JSON: the title each kind of invoice starts from for this customer - `{"expense":"INVOICE","patent-rd":"DEBIT NOTE"}`. */
   defaultTitles: "hi_defaulttitles",
+  /** Who is mailed when an invoice for this customer is issued: addresses separated by `;` or a new line. */
+  notifyTo: "hi_notifyto",
+  notifyCc: "hi_notifycc",
 } as const;
 
 /** Column limits - the table is built with these and the routes refuse what exceeds them. */
@@ -35,6 +38,7 @@ export const CUSTOMER_LIMITS = {
   tradingPartnerId: 100,
   paymentTerms: 100,
   defaultTitles: 200,
+  notifyList: 1000,
 } as const;
 
 /** The printed address has room for this many lines (the PDF's "To:" block). */
@@ -81,6 +85,61 @@ export interface CustomerInput {
 
 export interface Customer extends CustomerInput {
   id: string;
+  /**
+   * The site's accounting people told about an invoice, and who is copied. Kept out of
+   * `CustomerInput` on purpose: they are edited on their own screen by their own role
+   * (Admin > Mail Notifications), and the customer form must not overwrite them.
+   */
+  notifyTo: string[];
+  notifyCc: string[];
+}
+
+/** An address list as typed or stored - split on `;`, `,` or a new line, trimmed, no empties, no repeats. */
+export function parseAddressList(value: unknown): string[] {
+  const text = Array.isArray(value) ? value.join("\n") : typeof value === "string" ? value : "";
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of text.split(/[;,\n\r]+/)) {
+    const address = part.trim();
+    if (address && !seen.has(address.toLowerCase())) {
+      seen.add(address.toLowerCase());
+      out.push(address);
+    }
+  }
+  return out;
+}
+
+export interface NotifyInput {
+  to: string[];
+  cc: string[];
+}
+
+export type NotifyValidation = { ok: true; value: NotifyInput } | { ok: false; error: string };
+
+/**
+ * Check the To and Cc lists of a customer. `isAllowed` is the app's own mail rule
+ * (`isNotifiableAddress`), passed in so this file stays free of the mail code.
+ */
+export function validateNotifyInput(body: unknown, isAllowed: (address: string) => boolean): NotifyValidation {
+  if (typeof body !== "object" || body === null) return { ok: false, error: "The request body is not valid." };
+  const b = body as Record<string, unknown>;
+  const to = parseAddressList(b.to);
+  const cc = parseAddressList(b.cc);
+  for (const [label, list] of [["To", to], ["Cc", cc]] as const) {
+    if (list.join("; ").length > CUSTOMER_LIMITS.notifyList) {
+      return { ok: false, error: `${label} is too long (at most ${CUSTOMER_LIMITS.notifyList} characters).` };
+    }
+    const bad = list.find((address) => !isAllowed(address));
+    if (bad) return { ok: false, error: `${label}: ${bad} is not an address this app may mail (a valid HOYA address).` };
+  }
+  return { ok: true, value: { to, cc } };
+}
+
+export function notifyToDataverse(input: NotifyInput): Record<string, unknown> {
+  return {
+    [CUSTOMER_FIELDS.notifyTo]: input.to.join("; ") || null,
+    [CUSTOMER_FIELDS.notifyCc]: input.cc.join("; ") || null,
+  };
 }
 
 export function mapDataverseToCustomer(record: Record<string, unknown>): Customer {
@@ -95,6 +154,8 @@ export function mapDataverseToCustomer(record: Record<string, unknown>): Custome
     tradingPartnerId: text(CUSTOMER_FIELDS.tradingPartnerId),
     paymentTerms: text(CUSTOMER_FIELDS.paymentTerms) || DEFAULT_PAYMENT_TERMS,
     defaultTitles: parseDefaultTitles(record[CUSTOMER_FIELDS.defaultTitles]),
+    notifyTo: parseAddressList(record[CUSTOMER_FIELDS.notifyTo]),
+    notifyCc: parseAddressList(record[CUSTOMER_FIELDS.notifyCc]),
   };
 }
 
