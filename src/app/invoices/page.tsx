@@ -2,55 +2,35 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import useSWR from "swr";
-import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import useSWR, { mutate } from "swr";
+import { Download, Loader2 } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
+import { InvoiceTabs } from "@/components/invoices/InvoiceTabs";
+import { ExcelDropZone } from "@/components/invoices/ExcelDropZone";
+import { SavedInvoices } from "@/components/invoices/SavedInvoices";
+import { FIELD, customersFetcher, type Built } from "@/components/invoices/shared";
+import type { Customer } from "@/lib/invoice/customer-record";
+import type { SavedInvoice } from "@/lib/invoice/invoice-record";
 import { formatAmount } from "@/lib/utils/format";
 import { ClaimSheetError, parseClaimSheet, type ParsedClaim } from "@/lib/invoice/claim-sheet";
-import type { Customer } from "@/lib/invoice/customer-record";
-import { formatInvoiceDate, formatMonthLabel, lastDayOfMonth, type YearMonthDay } from "@/lib/invoice/dates";
-import { invoiceNumberFor } from "@/lib/invoice/invoice-number";
+import { formatMonthLabel, lastDayOfMonth, parseDateInput, toDateInput } from "@/lib/invoice/dates";
+import { renderPdf } from "@/lib/invoice/render-pdf";
 import type { DocumentTitle } from "@/lib/invoice/build-pdf";
 
 const TITLES: DocumentTitle[] = ["INVOICE", "DEBIT NOTE"];
 const DESCRIPTION = "Reimbursement for the expense";
 
-interface Built {
-  url: string;
-  fileName: string;
-}
-
-async function customersFetcher(url: string): Promise<{ customers: Customer[] }> {
-  const response = await fetch(url);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `The customers could not be read (${response.status}).`);
-  return data;
-}
-
-const FIELD =
-  "rounded-md border border-slate-900 dark:border-slate-300 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2.5 py-1.5 text-sm";
-
-/** `2026-10-31` from the date input, as the parts the document needs. */
-function parseDateInput(value: string): YearMonthDay | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return m ? { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) } : null;
-}
-
-function toDateInput({ year, month, day }: YearMonthDay): string {
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
 
 /**
  * Upload the monthly claim sheet, choose INVOICE / DEBIT NOTE per company, and get one PDF each.
  *
- * **Stage 1: nothing is saved yet.** The documents are made in the browser and handed back;
- * keeping them and their data in Dataverse waits for the sign-in approval, and the invoice
- * number is typed for the same reason (it will come from the table's highest number + 1).
+ * **Issuing saves the invoice** (header and line, in Dataverse) and takes the next number
+ * automatically; the PDF is made from what was saved. Saved invoices are listed below and can
+ * be downloaded again or cancelled (the number stays, marked Cancelled).
  */
 export default function Page() {
-  const fileInput = useRef<HTMLInputElement>(null);
   const { data: customerData, error: customerError } = useSWR("/api/customers", customersFetcher, {
     revalidateOnFocus: false,
   });
@@ -60,9 +40,10 @@ export default function Page() {
   const [error, setError] = useState("");
   const [reading, setReading] = useState(false);
   const [dateText, setDateText] = useState("");
-  const [firstNumber, setFirstNumber] = useState("");
-  const [titles, setTitles] = useState<Record<string, DocumentTitle | "">>({});
+  const [titles, setTitles] = useState<Record<string, DocumentTitle>>({});
   const [building, setBuilding] = useState(false);
+  const [issueFailures, setIssueFailures] = useState<string[]>([]);
+  const [numbers, setNumbers] = useState<Record<string, string>>({});
   const [built, setBuilt] = useState<Record<string, Built>>({});
 
   // Object URLs hold the file in memory until they are let go.
@@ -75,10 +56,10 @@ export default function Page() {
   function clearBuilt() {
     Object.values(builtRef.current).forEach((b) => URL.revokeObjectURL(b.url));
     setBuilt({});
+    setNumbers({});
   }
 
-  async function onFile(file: File | undefined) {
-    if (!file) return;
+  async function onFile(file: File) {
     setError("");
     setClaim(null);
     clearBuilt();
@@ -93,72 +74,72 @@ export default function Page() {
       setError(e instanceof ClaimSheetError ? e.message : "Something went wrong while reading the file.");
     } finally {
       setReading(false);
-      // Choosing the same file again must still fire a change.
-      if (fileInput.current) fileInput.current.value = "";
     }
   }
 
   const date = parseDateInput(dateText);
-  const first = Number(firstNumber);
-  const numberOk = Number.isInteger(first) && first > 0;
 
   const rows = (claim?.lines ?? []).map((line) => ({ line, customer: customerByCode.get(line.claimTo.toLowerCase()) }));
   const creatable = rows.filter((r) => r.customer);
-  const allTitled = creatable.every((r) => titles[r.line.claimTo]);
-  const canBuild = !!claim && !!date && numberOk && creatable.length > 0 && allTitled && !building;
+  // What was chosen on this screen, else the customer's default (Admin > Customers).
+  const titleOf = (row: { line: { claimTo: string }; customer?: Customer }): DocumentTitle =>
+    titles[row.line.claimTo] || row.customer?.defaultTitles.expense || "INVOICE";
+  const canBuild = !!claim && !!date && creatable.length > 0 && !building;
   const sum = claim ? claim.lines.reduce((a, l) => a + l.amount, 0) : 0;
 
   async function build() {
-    if (!claim || !date || !numberOk) return;
+    if (!claim || !date) return;
     setBuilding(true);
     setError("");
+    setIssueFailures([]);
     clearBuilt();
     try {
-      const { buildInvoicePdf } = await import("@/lib/invoice/build-pdf");
-      const logoPng = new Uint8Array(await (await fetch("/hoya-logo.png")).arrayBuffer());
-      const next: Record<string, Built> = {};
-      let seq = first;
-      for (const { line, customer } of creatable) {
-        const title = titles[line.claimTo] as DocumentTitle;
-        const invoiceNumber = invoiceNumberFor(date, seq++);
-        const bytes = await buildInvoicePdf({
-          title,
-          invoiceNumber,
-          invoiceDate: formatInvoiceDate(date),
-          customer: {
-            name: customer!.name,
-            addressLines: customer!.addressLines,
-            tradingPartnerId: customer!.tradingPartnerId,
-          },
-          paymentTerms: customer!.paymentTerms,
-          description: DESCRIPTION,
+      const response = await fetch("/api/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoiceDate: dateText,
           monthLabel: formatMonthLabel(claim.claimMonth),
-          amount: line.amount,
-          logoPng,
-        });
-        const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
-        next[line.claimTo] = { url: URL.createObjectURL(blob), fileName: `${invoiceNumber}.pdf` };
+          items: creatable.map(({ line, customer }) => ({
+            claimTo: line.claimTo,
+            title: titleOf({ line, customer }),
+            description: DESCRIPTION,
+            amount: line.amount,
+          })),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok && response.status !== 207) {
+        setError(data.error || "The invoices could not be issued.");
+        return;
+      }
+      const issued = (data.invoices ?? []) as SavedInvoice[];
+      setIssueFailures(((data.failed ?? []) as Array<{ claimTo: string; error: string }>).map((f) => `${f.claimTo}: ${f.error}`));
+
+      const next: Record<string, Built> = {};
+      for (const invoice of issued) {
+        const blob = await renderPdf(invoice, DESCRIPTION);
+        next[invoice.customerCode.toLowerCase()] = { url: URL.createObjectURL(blob), fileName: `${invoice.number}.pdf` };
       }
       setBuilt(next);
+      setNumbers(Object.fromEntries(issued.map((i) => [i.customerCode.toLowerCase(), i.number])));
+      await mutate("/api/invoices?status=");
     } catch {
-      setError("Something went wrong while creating the PDF. Please try again.");
+      setError("Something went wrong while issuing the invoices. Check the list below before trying again.");
     } finally {
       setBuilding(false);
     }
   }
 
-  // The number each creatable row will get, in the order it will be made.
-  const numberOf = (code: string): string => {
-    if (!date || !numberOk) return "";
-    const i = creatable.findIndex((r) => r.line.claimTo === code);
-    return i < 0 ? "" : invoiceNumberFor(date, first + i);
-  };
+  // Numbers are taken when the invoice is issued, never before.
+  const numberOf = (code: string): string => numbers[code.toLowerCase()] ?? "";
 
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-[#2D2A28]">
       <Header />
       <main className="flex-1 py-6 md:py-8 px-3 md:px-6">
         <div className="max-w-5xl mx-auto space-y-4 md:space-y-6">
+          <InvoiceTabs />
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-[#2D2A28] dark:text-white">Invoices</h1>
             <p className="text-sm md:text-base text-[#B0B5B5] mt-1">
@@ -171,24 +152,7 @@ export default function Page() {
             <p className="text-sm text-slate-500 dark:text-slate-400">
               Choose the .xlsm / .xlsx of 立替研究・出向者立替費用計算. The sheet that is read is 請求_出向者立替費用.
             </p>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".xlsx,.xlsm"
-              className="sr-only"
-              id="claim-file"
-              onChange={(e) => onFile(e.target.files?.[0])}
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <label
-                htmlFor="claim-file"
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors duration-300 ease-in-out ${PRIMARY_ACTION_FILL}`}
-              >
-                {reading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-                {reading ? "Reading..." : "Choose Excel file"}
-              </label>
-              {fileName && <span className="text-sm text-slate-600 dark:text-slate-300 break-all">{fileName}</span>}
-            </div>
+            <ExcelDropZone id="claim-file" fileName={fileName} reading={reading} onFile={onFile} />
             {error && (
               <p role="alert" className="text-sm text-red-600 dark:text-red-400">
                 {error}
@@ -218,23 +182,9 @@ export default function Page() {
                       }}
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
-                    First number (e.g. 182)
-                    <input
-                      type="number"
-                      min={1}
-                      inputMode="numeric"
-                      className={FIELD}
-                      value={firstNumber}
-                      onChange={(e) => {
-                        setFirstNumber(e.target.value);
-                        clearBuilt();
-                      }}
-                    />
-                  </label>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Until this is connected to the store (Dataverse), the running number is typed by hand. Once connected, it will continue from the last number automatically.
+                  Numbers are assigned automatically when the invoices are issued (HYM1AC{"{fiscal year}"}-{"{number}"}). Issuing saves them.
                 </p>
 
                 <div className="overflow-x-auto">
@@ -276,13 +226,12 @@ export default function Page() {
                               <select
                                 className={FIELD}
                                 aria-label={`Title for ${line.claimTo}`}
-                                value={titles[line.claimTo] ?? ""}
+                                value={titleOf({ line, customer })}
                                 onChange={(e) => {
-                                  setTitles((t) => ({ ...t, [line.claimTo]: e.target.value as DocumentTitle | "" }));
+                                  setTitles((t) => ({ ...t, [line.claimTo]: e.target.value as DocumentTitle }));
                                   clearBuilt();
                                 }}
                               >
-                                <option value="">Choose...</option>
                                 {TITLES.map((t) => (
                                   <option key={t} value={t}>
                                     {t}
@@ -295,10 +244,10 @@ export default function Page() {
                             {numberOf(line.claimTo)}
                           </td>
                           <td className="py-2">
-                            {built[line.claimTo] && (
+                            {built[line.claimTo.toLowerCase()] && (
                               <a
-                                href={built[line.claimTo].url}
-                                download={built[line.claimTo].fileName}
+                                href={built[line.claimTo.toLowerCase()].url}
+                                download={built[line.claimTo.toLowerCase()].fileName}
                                 className="inline-flex items-center gap-1 text-[#0057BC] dark:text-[#00A3DE] hover:underline"
                               >
                                 <Download className="w-4 h-4" />
@@ -338,22 +287,25 @@ export default function Page() {
                   className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold transition-colors duration-300 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed ${PRIMARY_ACTION_FILL}`}
                 >
                   {building && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {building ? "Creating..." : "Create invoices"}
+                  {building ? "Issuing..." : "Issue invoices"}
                 </button>
+                {issueFailures.length > 0 && (
+                  <p role="alert" className="w-full text-sm text-red-600 dark:text-red-400">
+                    Some could not be saved: {issueFailures.join("; ")}. Check the list below before issuing them again.
+                  </p>
+                )}
                 {!canBuild && !building && (
                   <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {!numberOk
-                      ? "Enter the first number."
-                      : !date
-                        ? "Enter the invoice date."
-                        : creatable.length === 0
-                          ? "No row has a registered customer."
-                          : "Choose a title for every row."}
+                    {!date
+                      ? "Enter the invoice date."
+                      : "No row has a registered customer."}
                   </span>
                 )}
               </div>
             </>
           )}
+
+          <SavedInvoices />
         </div>
       </main>
     </div>

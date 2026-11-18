@@ -317,8 +317,7 @@ export default function RolePermissionsPage() {
 
           {!isLoading && readable && isDefault && !hasChanges && (
             <div className="mt-6 p-4 rounded-xl border border-[#2D2A28]/40 dark:border-slate-500 bg-white dark:bg-transparent text-sm text-[#2D2A28] dark:text-slate-300">
-              Nobody has saved this table yet, so the defaults above are in force - the app as it behaved before the
-              table existed, with {ROLE_LABELS.capexadmin} as a User plus Edit on Meeting in MD and IIR Deck.
+              Nobody has saved this table yet, so the defaults above are in force.
             </div>
           )}
         </div>

@@ -22,14 +22,15 @@ import { DATAVERSE_COOKIES } from "@/lib/providers/dataverse/middleware";
 import { allows, areaRefusal, bestLevel, type AccessAreaId } from "@/lib/auth/permissions";
 import { rolePermissions } from "@/lib/settings/role-permissions";
 import { saysColumnMissing } from "@/lib/providers/dataverse/missing-column";
-import { ringiPreview } from "@/lib/settings/ringi-preview";
-import { RINGI_PREVIEW_REFUSAL, isRingiMember } from "@/lib/auth/ringi-preview";
 import { isSuperAdminCaller, SUPER_ADMIN_OBJECT_IDS } from "@/lib/auth/super-admin";
 import {
   getRoleName,
   isAdminOrFinance,
   mayDeleteEmptyItems,
+  mayCancelInvoices,
   readEntityAccess,
+  USER_PROFILE_ENTITY_SET,
+  USER_PROFILE_FIELDS,
   type EntityAccess,
   type UserRole,
 } from "@/lib/types/user-profile";
@@ -460,9 +461,9 @@ async function lookupProfiles(token: string, user: SignedInUser): Promise<Caller
     const addresses = (await profileAddresses(token, user)).map((a) => a.replace(/'/g, "''"));
     if (addresses.length === 0) return null;
     const filter = encodeURIComponent(addresses.map((a) => `hi_email eq '${a}'`).join(" or "));
-    const read = (select: string) => dataverseGet(token, `hi_userprofiles?$select=${select}&$filter=${filter}&$top=2`);
+    const read = (select: string) => dataverseGet(token, `${USER_PROFILE_ENTITY_SET}?$select=${select}&$filter=${filter}&$top=2`);
 
-    let profiles = await read("hi_userprofileid,hi_role,hi_isactive,hi_entityaccess");
+    let profiles = await read(`${USER_PROFILE_FIELDS.id},hi_role,hi_isactive,hi_entityaccess`);
     let withAccess = true;
     /* `hi_entityaccess` may not exist yet on an older table, and Dataverse
        rejects the whole $select over one unknown property (rule 7). That must
@@ -474,17 +475,17 @@ async function lookupProfiles(token: string, user: SignedInUser): Promise<Caller
        (found while sharing the lookup, 2026-10-20). */
     if (!profiles.ok && profiles.status === 400 && saysColumnMissing(await profiles.text(), "hi_entityaccess")) {
       withAccess = false;
-      profiles = await read("hi_userprofileid,hi_role,hi_isactive");
+      profiles = await read(`${USER_PROFILE_FIELDS.id},hi_role,hi_isactive`);
     }
     if (!profiles.ok) return null;
 
     const { value } = (await profiles.json()) as {
-      value?: Array<{ hi_userprofileid?: string; hi_role?: number; hi_isactive?: boolean; hi_entityaccess?: unknown }>;
+      value?: Array<Record<string, unknown> & { hi_role?: number; hi_isactive?: boolean; hi_entityaccess?: unknown }>;
     };
     return (value ?? [])
       .filter((p) => p.hi_isactive !== false)
       .map((p) => ({
-        id: (p.hi_userprofileid ?? "").toLowerCase(),
+        id: String(p[USER_PROFILE_FIELDS.id] ?? "").toLowerCase(),
         role: getRoleName(p.hi_role ?? 0),
         entityAccess: withAccess ? readEntityAccess(p.hi_entityaccess) : {},
       }));
@@ -595,6 +596,21 @@ export async function checkMayDeleteEmptyItems(): Promise<PrivilegedCheck> {
 }
 
 /**
+ * Admin, F&A-Admin or Invoice preparer - who may cancel an issued invoice
+ * (`mayCancelInvoices`), reporting which of the two failures occurred.
+ */
+export async function checkMayCancelInvoices(): Promise<PrivilegedCheck> {
+  const user = await requireSignedIn();
+  if (!user) return { user: null, reason: "not_signed_in" };
+  const allowed = await requireProfileRole(
+    (role) => mayCancelInvoices(role),
+    "Cancel an invoice",
+    "the Admin, F&A-Admin or Invoice preparer role"
+  );
+  return allowed ? { user: allowed } : { user: null, reason: "not_permitted" };
+}
+
+/**
  * Resolves the caller only if their profile is an Admin.
  *
  * Used by the user-management endpoints, which hand out roles and entity access
@@ -682,37 +698,11 @@ export async function checkArea(
   }
   const level = bestLevel(permissions.table, profiles.map((profile) => profile.role), areaId);
   if (allows(level, need)) {
-    if (areaId === "invoices") return ringiPreviewGate(user, token, profiles);
     return { user };
   }
 
   console.warn(`[Auth] ${need} on ${areaId} denied for ${user.email || user.userId}: the role table gives ${level}.`);
   return { user: null, reason: "not_permitted", message: areaRefusal(areaId, need) };
-}
-
-/**
- * **The Ringi preview, after the role table has said yes** (`lib/auth/ringi-preview`):
- * while it is on, only trial members and admins get past. Every ringi write and
- * every AI reader the ringi uses asks `checkArea("ringi", ...)`, so this is the
- * one place the preview is enforced (rules 2, 21). A setting nobody could read
- * refuses, as the role table does.
- */
-async function ringiPreviewGate(
-  user: SignedInUser,
-  token: string,
-  profiles: CallerProfile[]
-): Promise<PrivilegedCheck & { message?: string }> {
-  const preview = await ringiPreview(token);
-  if (!preview.readable) {
-    return {
-      user: null,
-      reason: "not_permitted",
-      message: "The Ringi preview setting could not be read, so this change was not made. Try again in a moment.",
-    };
-  }
-  if (isRingiMember(preview.setting, profiles)) return { user };
-  console.warn(`[Auth] ringi denied for ${user.email || user.userId}: the preview is on and they are not a trial member.`);
-  return { user: null, reason: "not_permitted", message: RINGI_PREVIEW_REFUSAL };
 }
 
 /**

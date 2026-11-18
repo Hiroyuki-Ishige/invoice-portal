@@ -32,7 +32,7 @@
  * routes all read this one module (rule 5).
  */
 
-import { USER_ROLES, type UserRole } from "@/lib/types/user-profile";
+import { INVOICE_CREATOR_ROLES, USER_ROLES, type UserRole } from "@/lib/types/user-profile";
 
 export type AccessLevel = "none" | "read" | "edit";
 export const ACCESS_LEVELS: readonly AccessLevel[] = ["none", "read", "edit"];
@@ -104,6 +104,7 @@ function defaultColumn(role: UserRole): RolePermissions {
     if (role === "admin") level = entry.levels.includes("edit") ? "edit" : "read";
     else if (entry.group === "Admin") level = role === "faadmin" && FINANCE_ADMIN_AREAS.includes(entry.id) ? "edit" : "none";
     else if (!entry.levels.includes("edit")) level = "read";
+    else if (entry.id === "invoices") level = INVOICE_CREATOR_ROLES.includes(role) ? "edit" : "read";
     else level = "edit";
     column[entry.id] = level;
   }

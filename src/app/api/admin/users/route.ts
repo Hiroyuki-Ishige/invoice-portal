@@ -16,6 +16,7 @@ import {
   mapDataverseToUserProfile,
   mapUserProfileToDataverse,
   sanitizeEntityAccess,
+  USER_PROFILE_ENTITY_SET,
   USER_PROFILE_FIELDS,
   isUserRole,
   type EntityAccess,
@@ -30,7 +31,7 @@ import { clearRegistrationCache } from "@/lib/auth/registration";
 import { createProfileRecord, missingColumnWarning } from "@/lib/auth/user-profile-write";
 import { handleApiError } from "@/lib/utils/api-helpers";
 
-const ENTITY_SET = "hi_userprofiles";
+const ENTITY_SET = USER_PROFILE_ENTITY_SET;
 
 /**
  * GET /api/admin/users

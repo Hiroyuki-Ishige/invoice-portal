@@ -11,11 +11,19 @@ Role Permissions / Setup (User Profile テーブルのみ) / ヘッダー・サ�
 **`/invoices` (段階 1, 2026-11-16)**: 立替費用 Excel (シート `請求_出向者立替費用`) をアップロード →
 表題 (INVOICE / DEBIT NOTE) を行ごとに選ぶ → 請求書 PDF を作る。部品は `lib/invoice/` (`claim-sheet` =
 Excel 読込、`build-pdf` = PDF、`invoice-number` = `HYM1AC{会計年度}-{連番}`、会計年度は 4/1 始まり)。
-**請求書自体はまだ何も保存しない**。連番 (3 桁、`-182`) は手入力。
+**段階 2 (2026-11-18、コード済み・Dataverse テーブル未作成)**: 発行すると `hi_invoice` / `hi_invoiceline` に保存し、
+連番は `hi_invoicesequence` から自動採番 (`lib/invoice/sequence.ts`、`If-Match` で重複なし、年度内 999 まで)。
+保存済み一覧・PDF 再生成・取消 (`/invoices`)。作成は Admin / F&A-Admin / Invoice preparer / Invoice receiver、
+取消は Admin / F&A-Admin / Invoice preparer (`mayCancelInvoices`)。新ロール `invoicepreparer` (値 5) / `invoicereceiver` (値 6)。
+テーブルは Admin > Setup の「Invoice tables」、年度ごとの最終番号は「Invoice numbers」で設定。設計: `docs/invoice-design.md`。
 **取引先マスタ**: Admin > Customers (`/admin/customers`, 行 `admin-customers`) で登録し、Dataverse の `hi_invoicecustomer`
 (Admin > Setup > Invoice Customer table で作る。組織所有) に入る。`code` が Excel の「Claim to」と一致する鍵で、重複不可。
 表が空のときは `customers-seed.ts` の既知 3 社 (HLAM / HOGV / HOMS-J) をボタンで投入できる。
-**未実装**: 請求書・明細の Dataverse テーブル、PDF とデータの保存、連番の自動採番。
+**Patent & R&D (`/invoices/patent-rd`、2026-11-18)**: `特許・研究費用計算(FY….xlsm)` のシート `請求_研究` と `請求_特許` から、
+R&D (HOMT) / Patent (HOGV, HOGV2, HLAO) と、それぞれの New Business 分で月 8 枚前後を発行する。同じ番号・保存・一覧・取消の仕組み
+(`lib/invoice/patent-sheet.ts` が Excel 読込、`xlsx-sheet.ts` が両方の共通の読み口)。1 社が 1 か月に 2 枚になるので、発行 API の
+各行が `description` を持ち、画面は会社コードでなく行番号で扱う。`/invoices` と `/invoices/patent-rd` はタブで行き来する。
+**未実装**: PDF ファイル自体の保存 (データから毎回作る)、メール送信、Draft 状態の使用。
 
 ## Tech Stack
 
@@ -43,10 +51,11 @@ Azure AD / MSAL.js · Lucide · SWR · isomorphic-dompurify · jsPDF + autotable
 - **API permissions (すべて Delegated)**: Dynamics CRM `user_impersonation` /
   Graph `User.Read`・`User.Read.All`・`Mail.Send`。コードが使う Graph 呼び出しは
   `GET /users` (担当者検索) と `POST /me/sendMail` (招待・通知メール) だけで、これで足りる。
-  `User.ReadBasic.All` は `msal-config.ts` に定義があるだけで未使用。
-  `AZURE_CLIENT_SECRET` は src で未使用 (Application 権限も不要)。
-- **`User.Read.All` は管理者同意が必要**で、本人は「Approval required」になる。**IT 管理者に
-  承認を依頼中。承認されるまでサインインの動作確認はできない。**
+  未使用だった `User.ReadBasic.All` の定義と `.env.example` の `AZURE_CLIENT_SECRET` は
+  2026-11-18 に削除 (Application 権限も不要)。
+- **`User.Read.All` は管理者同意が必要**だったが、**2026-11-18 に承認済み** (全 4 権限が
+  Granted for HOYA Corporation)。サインイン確認済み (Admin で入れた)。
+- 請求書の保存・採番の設計案は `docs/invoice-design.md` (提案、未承認。テーブルは未作成)。
 - 将来 PDF を OneDrive / SharePoint に保存する、Teams 通知する等を決めたら
   `Files.ReadWrite` / `Sites.Selected` / `Mail.ReadWrite` などを個別に追加依頼する
   (追加するとユーザーは再同意が必要)。
@@ -55,11 +64,8 @@ Azure AD / MSAL.js · Lucide · SWR · isomorphic-dompurify · jsPDF + autotable
 
 - **`hi_` プレフィックス・`hi_userprofiles`・`hi_appsettings`** をそのまま使う。
   請求書用の新テーブルも `hi_` に揃えるか、別プレフィックスにするか決める。
-- **Ringi preview (試用メンバー機能)**: `lib/auth/ringi-preview`, `lib/settings/ringi-preview`,
-  `hooks/useRingiPreview`, `PreviewChip`, User Management のスイッチ。名前は元のまま、
-  対象エリアは `invoices`。不要なら一式削除 (`require-signed-in.ts` の `ringiPreviewGate` も)。
-- **ロール**: `admin / faadmin / user ...` (`lib/types/user-profile.ts`) は CAPEX のまま。
-  請求書の業務に合わせて見直す。`SUPER_ADMIN_EMAILS` も要確認。
+- **ロール**: `user / invoicereceiver / invoicepreparer / faadmin / admin` (`lib/types/user-profile.ts`)。IIR-Admin (`capexadmin`) は選択肢から外した (値 4 は既存データ用に残す)。`SUPER_ADMIN_EMAILS` は要確認。
+- **ユーザーテーブルは Invoice Portal 専用** `hi_invoiceuserprofile` (2026-11-18、CAPEX の `hi_userprofile` とは別)。Ringi preview (試用メンバー) と Budget plan access (Entity access) の画面は削除済み。
 - **メール**: 件名プレフィックス `[CAPEX Budget]` / `[Fm Ringi system]` (`lib/notify/send-mail.ts`)、
   招待・登録依頼メールの文言に CAPEX が残る。
 - **`.claude/rules/`**: CAPEX 時代の文書。認証・Dataverse・レスポンシブ・アニメーションの

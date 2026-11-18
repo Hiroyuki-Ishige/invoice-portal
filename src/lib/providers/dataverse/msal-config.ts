@@ -27,7 +27,6 @@ export const DATAVERSE_SCOPES = {
 export const GRAPH_SCOPES = {
   userRead: "https://graph.microsoft.com/User.Read",
   userReadAll: "https://graph.microsoft.com/User.Read.All",
-  userReadBasicAll: "https://graph.microsoft.com/User.ReadBasic.All",
   /**
    * Sending route notifications as the signed-in approver.
    *

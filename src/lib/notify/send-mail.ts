@@ -20,8 +20,7 @@ import {
   buildRegistrationRequest,
   type RegistrationRequestInput,
 } from "./registration-request";
-import { mailContentWidth, renderTestNotice } from "./mail-shell";
-import { TEST_MAIL_MARK, needsTestMark, type TrialAudience } from "@/lib/auth/ringi-preview";
+import { mailContentWidth } from "./mail-shell";
 
 const GRAPH_SEND_MAIL = "https://graph.microsoft.com/v1.0/me/sendMail";
 
@@ -136,16 +135,6 @@ export interface GraphMessage {
   attachments?: GraphFileAttachment[];
   /** Built at `WIDE_MAIL_WIDTH` - so the `[TEST]` strip above it is as wide. */
   wide?: boolean;
-  /**
-   * **The Ringi preview's trial members**, for a message about a ringi
-   * (`lib/auth/ringi-preview`). While the preview is on, a message reaching
-   * anybody outside the list - To or Cc - is marked `[TEST]` in the subject
-   * and above the body, the whole message, because a subject is one line for
-   * everybody (asked 2026-10-02).
-   *
-   * Absent - the invitation - is never marked: it is not about a ringi.
-   */
-  trialAudience?: TrialAudience;
 }
 
 /**
@@ -197,17 +186,8 @@ export async function sendGraphMail(
     return { sent: 0, problem: "Could not get permission to send mail - nobody was notified." };
   }
 
-  // Applied here rather than at each builder, for the reason the domain rule
-  // is: this is the last point before the send, so a route notification and a
-  // hand-written message cannot end up with different markers - and a future
-  // third kind of mail gets it without anyone remembering to add it.
-  const marked =
-    message.trialAudience !== undefined &&
-    needsTestMark([...recipients, ...copies].map((person) => person.email), message.trialAudience);
-  const prefixed = withSubjectPrefix(message.subject, message.subjectPrefix || MAIL_SUBJECT_PREFIX);
-  // In front of the app's marker, so it is the first thing an inbox shows.
-  const subject = marked ? withSubjectPrefix(prefixed, TEST_MAIL_MARK) : prefixed;
-  const html = marked ? renderTestNotice(message.wide) + message.html : message.html;
+  const subject = withSubjectPrefix(message.subject, message.subjectPrefix || MAIL_SUBJECT_PREFIX);
+  const html = message.html;
 
   try {
     const response = await fetch(GRAPH_SEND_MAIL, {

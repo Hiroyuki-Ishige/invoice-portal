@@ -14,9 +14,14 @@ import {
   DEFAULT_PAYMENT_TERMS,
   MAX_ADDRESS_LINES,
   validateCustomerInput,
+  TITLE_CHOICES,
+  parseDefaultTitles,
+  titleOrDefault,
+  type DefaultTitles,
   type Customer,
 } from "@/lib/invoice/customer-record";
 import { STARTER_CUSTOMERS } from "@/lib/invoice/customers-seed";
+import { INVOICE_TYPES, INVOICE_TYPE_KEYS } from "@/lib/invoice/invoice-record";
 
 /** The message the route sent, so a refusal reads as what it was and not as "failed". */
 async function fetcher(url: string): Promise<{ customers: Customer[] }> {
@@ -36,6 +41,7 @@ interface Draft {
   lines: string[];
   tradingPartnerId: string;
   paymentTerms: string;
+  defaultTitles: DefaultTitles;
 }
 
 const blankDraft = (): Draft => ({
@@ -45,6 +51,7 @@ const blankDraft = (): Draft => ({
   lines: Array.from({ length: MAX_ADDRESS_LINES }, () => ""),
   tradingPartnerId: "",
   paymentTerms: DEFAULT_PAYMENT_TERMS,
+  defaultTitles: parseDefaultTitles(null),
 });
 
 const draftOf = (c: Customer): Draft => ({
@@ -54,6 +61,7 @@ const draftOf = (c: Customer): Draft => ({
   lines: Array.from({ length: MAX_ADDRESS_LINES }, (_, i) => c.addressLines[i] ?? ""),
   tradingPartnerId: c.tradingPartnerId,
   paymentTerms: c.paymentTerms,
+  defaultTitles: c.defaultTitles,
 });
 
 /**
@@ -76,6 +84,9 @@ export default function AdminCustomersPage() {
   if (access !== "allowed") return <AdminScreenGate state={access} need="admin-customers" />;
 
   const customers = data?.customers ?? [];
+  // The known customers not registered yet - by code, the way the Excel sheets name them.
+  const registered = new Set(customers.map((c) => c.code.toLowerCase()));
+  const missingStarters = STARTER_CUSTOMERS.filter((c) => !registered.has(c.code.toLowerCase()));
 
   async function send(url: string, method: "POST" | "PATCH" | "DELETE", body?: unknown): Promise<string | null> {
     const response = await fetch(url, {
@@ -96,6 +107,7 @@ export default function AdminCustomersPage() {
       addressLines: draft.lines,
       tradingPartnerId: draft.tradingPartnerId,
       paymentTerms: draft.paymentTerms,
+      defaultTitles: draft.defaultTitles,
     };
     const checked = validateCustomerInput(input);
     if (!checked.ok) {
@@ -141,7 +153,7 @@ export default function AdminCustomersPage() {
     setBusy(true);
     setNotice("");
     try {
-      for (const customer of STARTER_CUSTOMERS) {
+      for (const customer of missingStarters) {
         const problem = await send("/api/admin/customers", "POST", customer);
         if (problem) {
           setNotice(`${customer.code}: ${problem}`);
@@ -230,6 +242,30 @@ export default function AdminCustomersPage() {
                   <input className={FIELD} maxLength={CUSTOMER_LIMITS.paymentTerms} value={draft.paymentTerms} onChange={(e) => set({ paymentTerms: e.target.value })} />
                 </label>
               </div>
+              <fieldset className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 md:p-4">
+                <legend className="px-1 text-sm font-semibold text-[#2D2A28] dark:text-white">Default title</legend>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                  What the title is set to for this customer when each kind of invoice is prepared. It can still be changed per document.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                  {INVOICE_TYPE_KEYS.map((type) => (
+                    <label key={type} className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
+                      {INVOICE_TYPES[type].label}
+                      <select
+                        className={FIELD}
+                        value={draft.defaultTitles[type]}
+                        onChange={(e) => set({ defaultTitles: { ...draft.defaultTitles, [type]: titleOrDefault(e.target.value) } })}
+                      >
+                        {TITLE_CHOICES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               {formError && (
                 <p role="alert" className="text-sm text-red-600 dark:text-red-400">
                   {formError}
@@ -283,17 +319,37 @@ export default function AdminCustomersPage() {
                   className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-300 ease-in-out disabled:opacity-40 ${PRIMARY_ACTION_FILL}`}
                 >
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Add the {STARTER_CUSTOMERS.length} known customers ({STARTER_CUSTOMERS.map((c) => c.code).join(", ")})
+                  Add the {missingStarters.length} known customers ({missingStarters.map((c) => c.code).join(", ")})
                 </button>
               </div>
             ) : (
+              <div className="space-y-3">
+                {missingStarters.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+                    <span>Known customers not registered yet: {missingStarters.map((c) => c.code).join(", ")}.</span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={addStarter}
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-300 ease-in-out disabled:opacity-40 ${PRIMARY_ACTION_FILL}`}
+                    >
+                      {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Add them
+                    </button>
+                  </div>
+                )}
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[760px] text-sm">
                   <thead>
                     <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                       <th className="py-2 pr-3 font-semibold">Code</th>
                       <th className="py-2 pr-3 font-semibold">Name</th>
                       <th className="py-2 pr-3 font-semibold">Trading Partner ID</th>
+                      {INVOICE_TYPE_KEYS.map((type) => (
+                        <th key={type} className="py-2 pr-3 font-semibold whitespace-nowrap">
+                          Title: {INVOICE_TYPES[type].label}
+                        </th>
+                      ))}
                       <th className="py-2 font-semibold text-right">
                         <span className="sr-only">Actions</span>
                       </th>
@@ -305,6 +361,11 @@ export default function AdminCustomersPage() {
                         <td className="py-2 pr-3 font-medium text-[#2D2A28] dark:text-white">{c.code}</td>
                         <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{c.name}</td>
                         <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">{c.tradingPartnerId}</td>
+                        {INVOICE_TYPE_KEYS.map((type) => (
+                          <td key={type} className="py-2 pr-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                            {c.defaultTitles[type]}
+                          </td>
+                        ))}
                         <td className="py-2 text-right whitespace-nowrap">
                           <button
                             type="button"
@@ -331,6 +392,7 @@ export default function AdminCustomersPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
               </div>
             )}
           </GlassCard>

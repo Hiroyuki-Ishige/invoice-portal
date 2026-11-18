@@ -412,40 +412,6 @@ function renderSteps(current: ApprovalStep): string {
 }
 
 /**
- * **The `[TEST]` strip** put above a ringi message while the Ringi preview is
- * on and somebody outside the trial is among its recipients
- * (`lib/auth/ringi-preview`, applied in `sendGraphMail`).
- *
- * A block of its own above the card rather than a slot inside it, because the
- * decision is made at the send, after the message is built - and on the page
- * colour, so the two read as one surface. Outlined HOYA Blue, one hue: a state,
- * not an alarm (rule 33); `#0057BC` on white is 6.9:1.
- */
-export function renderTestNotice(wide = false): string {
-  const width = mailWidth(wide);
-  return `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
-       style="background:${PAGE_BG};margin:0;padding:24px 0 0">
-  <tr>
-    <td align="center" style="padding:0 12px">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${width}"
-             style="width:${width}px;max-width:100%;background:#ffffff;border:2px solid ${HOYA_BLUE};
-                    border-radius:10px">
-        <tr>
-          <td style="padding:12px 18px;font-family:${FONT_STACK};font-size:14px;line-height:1.5;
-                     color:${HOYA_BLUE}">
-            <strong>TEST</strong> - this message comes from the Ringi application preview. The
-            application it is about is a test, not a real approval request, and you do not
-            need to act on it.
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`;
-}
-
-/**
  * The whole message, ready for `sendGraphMail`.
  *
  * The button is a table cell with a background colour rather than a styled

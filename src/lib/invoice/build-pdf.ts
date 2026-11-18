@@ -126,7 +126,12 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
   text("Month", monthCentre, 451.27, { align: "center" });
   text("Amount (JPY)", amountCentre, 451.27, { align: "center" });
 
+  // A long description (the "(New Business)" ones) is set smaller rather than run into the Month column.
+  const descMaxWidth = COL_DESC_END - 66.144 - 4;
+  const descWidth = doc.getTextWidth(input.description);
+  if (descWidth > descMaxWidth) doc.setFontSize(Math.max(8, (12 * descMaxWidth) / descWidth));
   text(input.description, 66.144, 438.43);
+  doc.setFontSize(12);
   text(input.monthLabel, monthCentre, 438.43, { align: "center" });
   text(yen, amountRight, 438.43, { align: "right" });
 

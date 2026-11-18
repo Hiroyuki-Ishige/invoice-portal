@@ -22,11 +22,9 @@ import { useHeaderHidden } from "@/hooks/useHeaderHidden";
 import { createContext, useContext, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Eye, FlaskConical, ShieldX } from "lucide-react";
+import { ArrowLeft, Eye, ShieldX } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useAreaLevel } from "@/hooks/useRolePermissions";
-import { useRingiPreview } from "@/hooks/useRingiPreview";
-import { RINGI_PREVIEW_REFUSAL } from "@/lib/auth/ringi-preview";
 import { areaForPath, type AccessLevel } from "@/lib/auth/permissions";
 
 const AreaLevelContext = createContext<AccessLevel | "checking" | "unlisted">("unlisted");
@@ -48,34 +46,6 @@ export function AreaGate({ children }: { children: ReactNode }) {
   const level = useAreaLevel(area?.id ?? "");
   const value = !area || !isAuthenticated ? "unlisted" : level;
   const { hidden: headerHidden } = useHeaderHidden();
-  const preview = useRingiPreview();
-  const isRingi = area?.id === "invoices";
-
-  /* **The Ringi preview** (`lib/auth/ringi-preview`) closes the ringi to
-     anybody not on the trial list - asked before the role table's None, which
-     it also produces, so the sentence names the reason that applies (rule 41).
-     Not the red refusal below: nobody did anything wrong, the screen is simply
-     not open to them yet. */
-  if (isRingi && isAuthenticated && preview.blocked) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-white dark:bg-[#2D2A28]">
-        <div className="max-w-md p-8 text-center rounded-2xl border border-[#0057BC]/30 dark:border-[#00A3DE]/40">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#0057BC]/10 dark:bg-[#00A3DE]/15 flex items-center justify-center">
-            <FlaskConical className="w-8 h-8 text-[#0057BC] dark:text-[#00A3DE]" />
-          </div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Ringi application is in preview</h1>
-          <p className="text-[#2D2A28] dark:text-slate-300 mb-4">{RINGI_PREVIEW_REFUSAL}</p>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#0057BC] text-white rounded-lg hover:bg-[#004494] transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Home
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   if (area && isAuthenticated && level === "none") {
     return (
@@ -111,23 +81,6 @@ export function AreaGate({ children }: { children: ReactNode }) {
           <span>
             Read only - your role may view {area.label} but not change it. An administrator can grant Edit in Admin
             &gt; Role Permissions.
-          </span>
-        </div>
-      )}
-      {/* The trial members' half of the preview: every ringi screen says what
-          they are looking at (rule 10).
-
-          **Orange, at the user's request (2026-10-02)**, not HOYA Blue. It is
-          the one orange the app already has, the quotation-expiry warning's
-          (`lib/approval/quotation-expiry.ts`), so rule 33 gains no new hue:
-          orange-700 on orange-50 is 4.9:1, orange-300 on the dark wash ~8:1. */}
-      {isRingi && isAuthenticated && preview.enabled && !preview.blocked && !headerHidden && (
-        <div className="print:hidden flex items-start sm:items-center justify-center gap-2 px-3 py-2 text-xs text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/25 border-b border-orange-400/70 dark:border-orange-400/60">
-          <FlaskConical className="w-3.5 h-3.5 shrink-0 mt-px sm:mt-0" />
-          <span>
-            <span className="font-semibold">Preview</span> - Ringi application is still being built and is open to
-            trial members only. Applications made here are tests, not real approval requests. Mail it sends to
-            anyone outside the trial is marked [TEST].
           </span>
         </div>
       )}

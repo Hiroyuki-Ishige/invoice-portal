@@ -28,8 +28,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ChevronDown, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { useRingiPreview } from "@/hooks/useRingiPreview";
-import { PreviewChip } from "@/components/ui/PreviewChip";
 import { areaForPath } from "@/lib/auth/permissions";
 import {
   NavChildLink,
@@ -155,9 +153,6 @@ function Rail({
       document.removeEventListener("keydown", escape);
     };
   }, [open, onToggle]);
-  const { enabled: ringiInPreview } = useRingiPreview();
-  const previewChip = (href: string) =>
-    ringiInPreview && areaForPath(href)?.id === "invoices" ? <PreviewChip /> : null;
 
   return (
     <>
@@ -188,7 +183,7 @@ function Rail({
               }}
             />
           ) : (
-            <Entry key={item.href} item={item} open={open} pathname={pathname} chip={previewChip(item.href)} />
+            <Entry key={item.href} item={item} open={open} pathname={pathname} />
           )
         )}
       </nav>
@@ -222,12 +217,10 @@ function Entry({
   item,
   open,
   pathname,
-  chip,
 }: {
   item: NavItem;
   open: boolean;
   pathname: string;
-  chip: ReactNode;
 }) {
   const active = isOnEntry(pathname, item.href);
   return (
@@ -245,7 +238,6 @@ function Entry({
       {open && (
         <>
           <span className="truncate">{item.label}</span>
-          {chip}
         </>
       )}
     </Link>
