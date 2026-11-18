@@ -6,24 +6,31 @@
 ## 状態: 原型 (prototype)
 
 動くもの: サインイン (MSAL) / 登録ユーザーの判定 / ロール権限表 / User Management /
-Role Permissions / Setup (User Profile テーブルのみ) / ヘッダー・サイドレール / ダーク
-モード / 招待メール。
+Role Permissions / Setup (ユーザー・請求書・取引先の各テーブル) / ヘッダー・サイドレール / ダーク
+モード / 招待メール / 請求書の発行・保存・一覧・取消 / 完了通知メール。
 **`/invoices` (段階 1, 2026-11-16)**: 立替費用 Excel (シート `請求_出向者立替費用`) をアップロード →
 表題 (INVOICE / DEBIT NOTE) を行ごとに選ぶ → 請求書 PDF を作る。部品は `lib/invoice/` (`claim-sheet` =
 Excel 読込、`build-pdf` = PDF、`invoice-number` = `HYM1AC{会計年度}-{連番}`、会計年度は 4/1 始まり)。
-**段階 2 (2026-11-18、コード済み・Dataverse テーブル未作成)**: 発行すると `hi_invoice` / `hi_invoiceline` に保存し、
+**段階 2 (2026-11-18、テーブルは `Invoice-Portal` ソリューションに作成済み)**: 発行すると `hi_invoice` / `hi_invoiceline` に保存し、
 連番は `hi_invoicesequence` から自動採番 (`lib/invoice/sequence.ts`、`If-Match` で重複なし、年度内 999 まで)。
 保存済み一覧・PDF 再生成・取消 (`/invoices`)。作成は Admin / F&A-Admin / Invoice preparer / Invoice receiver、
 取消は Admin / F&A-Admin / Invoice preparer (`mayCancelInvoices`)。新ロール `invoicepreparer` (値 5) / `invoicereceiver` (値 6)。
 テーブルは Admin > Setup の「Invoice tables」、年度ごとの最終番号は「Invoice numbers」で設定。設計: `docs/invoice-design.md`。
+テーブルの作成先ソリューションは環境変数 `DATAVERSE_SOLUTION` (`InvoicePortal`)。未設定なら既定ソリューションに入る。
 **取引先マスタ**: Admin > Customers (`/admin/customers`, 行 `admin-customers`) で登録し、Dataverse の `hi_invoicecustomer`
 (Admin > Setup > Invoice Customer table で作る。組織所有) に入る。`code` が Excel の「Claim to」と一致する鍵で、重複不可。
-表が空のときは `customers-seed.ts` の既知 3 社 (HLAM / HOGV / HOMS-J) をボタンで投入できる。
+`customers-seed.ts` の既知の会社 (HLAM / HOGV / HOMS-J / HOMT / HOGV2 / HLAO) のうち未登録のものをボタンで投入できる。
+取引先ごとに **請求書の種類別の既定の表題** (`defaultTitles`、列 `hi_defaulttitles`) を持つ (例: HLAO の Patent & R&D は DEBIT NOTE)。
 **Patent & R&D (`/invoices/patent-rd`、2026-11-18)**: `特許・研究費用計算(FY….xlsm)` のシート `請求_研究` と `請求_特許` から、
 R&D (HOMT) / Patent (HOGV, HOGV2, HLAO) と、それぞれの New Business 分で月 8 枚前後を発行する。同じ番号・保存・一覧・取消の仕組み
 (`lib/invoice/patent-sheet.ts` が Excel 読込、`xlsx-sheet.ts` が両方の共通の読み口)。1 社が 1 か月に 2 枚になるので、発行 API の
 各行が `description` を持ち、画面は会社コードでなく行番号で扱う。`/invoices` と `/invoices/patent-rd` はタブで行き来する。
-**未実装**: PDF ファイル自体の保存 (データから毎回作る)、メール送信、Draft 状態の使用。
+**完了通知メール (2026-11-18)**: Admin > Mail Notifications (`/admin/notifications`、行 `admin-notifications`、Admin と F&A-Admin) で取引先ごとの To / Cc を
+Microsoft 365 のユーザー検索で選ぶ (列 `hi_notifyto` / `hi_notifycc`)。発行後と保存済み一覧のチェックから、1 社 1 通で送る
+(`lib/notify/invoice-notice.ts`、`NotifyPanel`)。**自動では送らない**: 宛先を見せて、押した人のメールボックスから送る。PDF は任意で添付。
+**ユーザーのテーブルは Invoice Portal 専用** `hi_invoiceuserprofile` (`USER_PROFILE_*` 定数。CAPEX の `hi_userprofile` とは別)。
+Ringi preview (試用メンバー)・Budget plan access・IIR-Admin ロールは削除済み (`capexadmin` の値 4 は既存データ用に残る)。
+**未実装**: PDF ファイル自体の保存 (データから毎回作る)、Draft 状態の使用。
 
 ## Tech Stack
 
@@ -80,7 +87,10 @@ Azure AD / MSAL.js · Lucide · SWR · isomorphic-dompurify · jsPDF + autotable
 npm run dev | npm run build | npm run lint | npx tsc --noEmit
 ```
 
-- テストフレームワークなし。ロジックは使い捨て `.mts` で確かめて消す。
+- テストフレームワークなし。ロジックは使い捨て `.mts` で確かめて消す。`npm run lint` には前からのエラー
+  (`set-state-in-effect`) があるので、ゲートは `npm run build` と `npx tsc --noEmit`。
+- Dataverse のテーブル・列の作成と変更は、実行前に必ず本人へ確認する。画面 (Admin > Setup) の
+  Create / Top up ボタンを本人が押すのが基本。列を足したコードをマージしたら、Top up が要ると報告する。
 - 作業はブランチで、完了したら `main` にマージ。
 - **アプリは英語で作る。** 画面の文言、ボタン、エラーメッセージ、確認ダイアログ、招待・通知メール、
   PDF の文言、Dataverse の表示名はすべて英語。日本語にしてよいのは、Excel のシート名
@@ -89,3 +99,12 @@ npm run dev | npm run build | npm run lint | npx tsc --noEmit
   なお、Claude への返信とこのファイルの説明は日本語のまま。
 - 金額は `formatAmount()` (`lib/utils/format`) - `toLocaleString()` は必ず `"en-US"` 付き。
 - **返信は日本語で**。
+
+## Claude の道具 (`.claude/`)
+
+- `commands/`: `/cp` (検証 → 任意のレビュー → コミット → `main` へマージ → push。`/cp review` でレビューを回す)、
+  `/review-code-invoice-portal` (3 観点を並列。`-all` で全体、`-l` で深く)、`/c` `/cs` `/r` `/update`。
+- `agents/`: `invoice-security-reviewer` / `invoice-readability-reviewer` / `invoice-performance-reviewer` (読み取り専用)、
+  `playwright-test-generator` / `healer` / `planner` (テストの導入は未定。Playwright MCP の設定は未作成)。
+- `hooks/restrict-test-writes.sh`: healer の書き込みを `e2e/` と `specs/` に限る。
+- `rules/`: CAPEX 時代の文書。認証・Dataverse・レスポンシブ・アニメーションの規則は生きていて、画面例は読み替える。

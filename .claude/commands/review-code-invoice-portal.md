@@ -1,7 +1,9 @@
 ---
 description: コードを複数の観点からレビューする
 allowed-tools:
-  - Agent
+  - Agent(invoice-security-reviewer)
+  - Agent(invoice-readability-reviewer)
+  - Agent(invoice-performance-reviewer)
   - Read
   - Glob
   - Grep
