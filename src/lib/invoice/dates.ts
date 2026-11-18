@@ -40,3 +40,13 @@ export function formatMonthLabel({ year, month }: YearMonth): string {
 export function fiscalYearOf({ year, month }: YearMonth): number {
   return month >= 4 ? year : year - 1;
 }
+
+/** `2026-10-31` from the date input, as the parts the document needs. */
+export function parseDateInput(value: string): YearMonthDay | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) } : null;
+}
+
+export function toDateInput({ year, month, day }: YearMonthDay): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}

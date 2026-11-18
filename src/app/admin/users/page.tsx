@@ -18,10 +18,7 @@ import {
   AlertCircle,
   Trash2,
   Mail,
-  FlaskConical,
-  Check,
 } from "lucide-react";
-import { useRingiPreview } from "@/hooks/useRingiPreview";
 import { sendInvitation } from "@/lib/notify/send-mail";
 import { Header } from "@/components/ui/Header";
 import { AdminScreenGate, useAdminAccess } from "@/components/admin/AdminScreenGate";
@@ -32,16 +29,11 @@ import { RoleBadge } from "@/components/ui/RoleBadge";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { LoadingBlock } from "@/components/ui/Loading";
 import {
-  ENTITY_ACCESS_LABELS,
-  ENTITY_ACCESS_LEVELS,
   ROLE_HINTS,
   ROLE_LABELS,
   USER_ROLES,
-  countGrantedEntities,
   isSuperAdmin,
-  entityAccessLevel,
   type EntityAccess,
-  type EntityAccessLevel,
   type UserProfile,
   type UserRole,
 } from "@/lib/types/user-profile";
@@ -66,11 +58,6 @@ interface UserFormData {
   entityAccess: EntityAccess;
 }
 
-interface CapexEntity {
-  id: string;
-  name: string;
-}
-
 const EMPTY_FORM: UserFormData = {
   email: "",
   displayName: "",
@@ -85,19 +72,6 @@ const EMPTY_FORM: UserFormData = {
  * The words come from `ROLE_LABELS` / `ROLE_HINTS`, so the button that grants a
  * role and the chip that reports one cannot describe it differently.
  */
-/**
- * The Ringi trial pill on a list row: HOYA Blue tint when the person is a
- * member, the white / Warm Black outline when not - one hue, filled or
- * outlined (rule 33). `#0057BC` on its 10% tint is 6.0:1; Warm Black on white
- * 14:1.
- */
-const trialPillClass = (member: boolean): string =>
-  `px-2 py-0.5 rounded-full text-xs font-medium border ${
-    member
-      ? "bg-[#0057BC]/10 text-[#0057BC] border-[#0057BC]/30 dark:bg-[#00A3DE]/15 dark:text-[#00A3DE] dark:border-[#00A3DE]/40"
-      : "bg-white text-[#2D2A28] border-[#2D2A28]/40 hover:border-[#0057BC] dark:bg-transparent dark:text-slate-300 dark:border-slate-500"
-  }`;
-
 const ROLE_OPTIONS: Array<{ role: UserRole; label: string; hint: string }> = USER_ROLES.map((role) => ({
   role,
   label: ROLE_LABELS[role],
@@ -114,7 +88,6 @@ export default function AdminUsersPage() {
   } = useAuth();
   const access = useAdminAccess("admin-users");
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [entities, setEntities] = useState<CapexEntity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -136,16 +109,6 @@ export default function AdminUsersPage() {
    * read the one panel that matters as decoration.
    */
   const [sent, setSent] = useState<string | null>(null);
-  /**
-   * **The Ringi preview** (`lib/auth/ringi-preview`): the switch above the
-   * list and the "Ringi trial member" tick on each profile. Admins are members
-   * whatever the list says, so their tick is not offered.
-   */
-  const ringiPreview = useRingiPreview();
-  /** The write in flight - `"switch"` or a profile id - so only its control waits. */
-  const [previewBusy, setPreviewBusy] = useState<string | null>(null);
-  const isRingiMember = (user: UserProfile) =>
-    user.role === "admin" || isSuperAdmin(user.email) || (ringiPreview.memberIds ?? []).includes(user.id.toLowerCase());
 
   /**
    * The `dv_*` cookies are written when AuthProvider initialises, while MSAL
@@ -187,28 +150,11 @@ export default function AdminUsersPage() {
     }
   }, [withFreshSession]);
 
-  /**
-   * The entities to offer a right for, read from Dataverse rather than listed
-   * here - a copy would stop tracking the table the moment one is added.
-   */
-  const fetchEntities = useCallback(async () => {
-    try {
-      const response = await withFreshSession("/api/dataverse/entities");
-      if (!response.ok) return;
-      const data = await response.json();
-      setEntities(data.entities || []);
-    } catch {
-      // Not fatal: the rest of the screen still edits roles and status, and the
-      // access card says the list could not be loaded.
-    }
-  }, [withFreshSession]);
-
   useEffect(() => {
     if (!authLoading && isAdmin) {
       fetchUsers();
-      fetchEntities();
     }
-  }, [authLoading, isAdmin, fetchUsers, fetchEntities]);
+  }, [authLoading, isAdmin, fetchUsers]);
 
   // Filter users by search
   const filteredUsers = useMemo(() => {
@@ -292,27 +238,6 @@ export default function AdminUsersPage() {
       // created under, and the API refuses to change it.
       email: isCreating ? email : formData.email,
     });
-  };
-
-  /** One entity's level. "none" is removed, so the map holds what was granted. */
-  const setEntityLevel = (entity: string, level: EntityAccessLevel) => {
-    setFormData((prev) => {
-      const next = { ...prev.entityAccess };
-      if (level === "none") delete next[entity];
-      else next[entity] = level;
-      return { ...prev, entityAccess: next };
-    });
-  };
-
-  /** The same level for every entity - the usual case is all or nothing. */
-  const setAllEntityLevels = (level: EntityAccessLevel) => {
-    setFormData((prev) => ({
-      ...prev,
-      entityAccess:
-        level === "none"
-          ? {}
-          : Object.fromEntries(entities.map((entity) => [entity.name, level])),
-    }));
   };
 
   /**
@@ -477,30 +402,6 @@ export default function AdminUsersPage() {
   };
 
   /**
-   * One write to the Ringi preview - the switch, or one person's tick - saved
-   * at once, as the Account Status toggle is. The answer is the setting as
-   * saved, and the hook re-reads it so the menu and the ticks agree.
-   */
-  const savePreview = async (busy: string, payload: { enabled: boolean } | { profileId: string; member: boolean }) => {
-    setPreviewBusy(busy);
-    setError(null);
-    try {
-      const response = await withFreshSession("/api/settings/ringi-preview", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "The Ringi preview setting was not saved");
-      await ringiPreview.mutate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The Ringi preview setting was not saved");
-    } finally {
-      setPreviewBusy(null);
-    }
-  };
-
-  /**
    * Remove the profile record.
    *
    * Distinct from the Active toggle above it, which revokes access and leaves
@@ -626,33 +527,6 @@ export default function AdminUsersPage() {
             </div>
           )}
 
-          {/* **The Ringi preview switch.** While it is on, only trial members
-              (ticked below, on each profile) and admins can open Ringi
-              application, and its mail to anybody else is marked [TEST]. The
-              first switch-on ticks everybody registered at that moment. */}
-          <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-lg border border-[#0057BC]/30 dark:border-[#00A3DE]/40">
-            <FlaskConical className="hidden sm:block w-5 h-5 shrink-0 text-[#0057BC] dark:text-[#00A3DE]" />
-            <div className="min-w-0 flex-1 text-sm">
-              <p className="font-medium text-[#2D2A28] dark:text-white">
-                Ringi application preview: {ringiPreview.enabled ? "On" : "Off"}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {ringiPreview.enabled
-                  ? `Only trial members (${users.filter((user) => user.isActive && isRingiMember(user)).length} active, admins included) can open it. Its mail to anybody else is marked [TEST]. Switch a person with the Ringi trial button on their row.`
-                  : "Everybody the Role Permissions table allows can open it, and its mail is not marked. Turning the preview on makes every user registered now a trial member."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => savePreview("switch", { enabled: !ringiPreview.enabled })}
-              disabled={previewBusy !== null || ringiPreview.isLoading || !ringiPreview.readable}
-              className="shrink-0 flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg border border-slate-900 dark:border-slate-300 bg-white dark:bg-slate-900 text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {previewBusy === "switch" && <RefreshCw className="w-4 h-4 animate-spin" />}
-              {ringiPreview.enabled ? "Turn preview off" : "Turn preview on"}
-            </button>
-          </div>
-
           {/* Main Content - Split View. 40 / 60 (ui-design 0.2), not 33 / 67:
               at a third the rows wrapped their budget line and cut names short,
               while the form beside it had room to spare (asked 2026-10-02). */}
@@ -729,15 +603,6 @@ export default function AdminUsersPage() {
                             <div className="text-xs text-[#B0B5B5] truncate">
                               {user.email}
                             </div>
-                            {/* How much of the estate this account can reach,
-                                without opening it. */}
-                            <div className="text-xs text-[#B0B5B5] mt-0.5">
-                              {countGrantedEntities(user.entityAccess) === 0
-                                ? "No budget plan access"
-                                : `Budget plan: ${countGrantedEntities(user.entityAccess)} of ${
-                                    entities.length || countGrantedEntities(user.entityAccess)
-                                  } entities`}
-                            </div>
                           </button>
                           <div className="flex-shrink-0 flex items-center gap-1.5">
                             {user.isActive ? (
@@ -773,50 +638,6 @@ export default function AdminUsersPage() {
                             )}
                           </div>
                         </div>
-                        {/* **Ringi trial, said and switched on the row** (asked
-                            2026-10-02) - the same write as the tick in the form,
-                            through `savePreview`. Outside the row's select
-                            button, which a button may not sit inside. Filled
-                            when a member, outlined when not: one hue, two
-                            weights (rule 33). An admin is a member by role, so
-                            theirs is a statement, not a switch (rule 25). */}
-                        {ringiPreview.enabled && (
-                          <div className="mt-2">
-                            {user.role === "admin" || isSuperAdmin(user.email) ? (
-                              <span
-                                title="Admins can always open Ringi application - no tick needed."
-                                className={`inline-flex items-center gap-1 ${trialPillClass(true)}`}
-                              >
-                                <Check className="w-3 h-3" />
-                                Ringi trial (admin)
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  savePreview(user.id, { profileId: user.id, member: !isRingiMember(user) })
-                                }
-                                disabled={previewBusy !== null}
-                                aria-pressed={isRingiMember(user)}
-                                title={
-                                  isRingiMember(user)
-                                    ? `Remove ${user.displayName || user.email} from the Ringi trial`
-                                    : `Add ${user.displayName || user.email} to the Ringi trial`
-                                }
-                                className={`inline-flex items-center gap-1 transition-colors duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed ${trialPillClass(isRingiMember(user))}`}
-                              >
-                                {previewBusy === user.id ? (
-                                  <RefreshCw className="w-3 h-3 animate-spin" />
-                                ) : isRingiMember(user) ? (
-                                  <Check className="w-3 h-3" />
-                                ) : (
-                                  <Plus className="w-3 h-3" />
-                                )}
-                                {isRingiMember(user) ? "Ringi trial" : "Add to Ringi trial"}
-                              </button>
-                            )}
-                          </div>
-                        )}
                       </div>
                     ))
                   )}
@@ -893,12 +714,12 @@ export default function AdminUsersPage() {
                         <label className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1">
                           Role
                         </label>
-                        {/* Four roles: two by two on a phone, one row from `sm` -
+                        {/* Six roles: two by two on a phone, three across from `sm` -
                             and two by two again at `lg`, where the form shares
                             the row with the list: at 1024 a button gets 125px and
                             "CAPEX-Admin" needed 132 (measured 2026-10-02; it is the
                             shorter "IIR-Admin" since 2026-10-17). */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2">
                           {ROLE_OPTIONS.map(({ role, label, hint }) => (
                             <button
                               key={role}
@@ -916,7 +737,7 @@ export default function AdminUsersPage() {
                                 <Shield className="w-4 h-4" />
                               ) : role === "faadmin" ? (
                                 <ShieldCheck className="w-4 h-4" />
-                              ) : role === "capexadmin" ? (
+                              ) : role === "invoicepreparer" ? (
                                 <ShieldPlus className="w-4 h-4" />
                               ) : (
                                 <User className="w-4 h-4" />
@@ -926,132 +747,6 @@ export default function AdminUsersPage() {
                           ))}
                         </div>
                       </div>
-
-                      {/* **Budget plan access, per entity.** Titled "Entity access"
-                          until 2026-09-21, which named the axis and not the right:
-                          it was read as governing the ringi too, and a V2 Edit was
-                          expected to open the HOGV2x applications. It governs the
-                          budget plan only (`lib/auth/entity-access.ts`), so the
-                          heading says so, and the line under it says what it does
-                          not do (rule 10). Not "Budget assignment" - that is
-                          ringi Step 3, which this does not touch either. */}
-                      <div>
-                        <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2 mb-1">
-                          <div className="min-w-0">
-                            <label className="block text-sm font-medium text-[#2D2A28] dark:text-white">
-                              Budget plan access (Schedule &amp; Amount), per entity
-                            </label>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Not the ringi - who may edit an application is set by its routes and
-                              Admin &gt; Circulation Route.
-                            </p>
-                          </div>
-                          {entities.length > 0 && (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span className="text-xs text-[#B0B5B5] mr-1 whitespace-nowrap">Set all</span>
-                              {ENTITY_ACCESS_LEVELS.map((level) => (
-                                <button
-                                  key={level}
-                                  type="button"
-                                  onClick={() => setAllEntityLevels(level)}
-                                  disabled={!!(selectedUser && !canEdit(selectedUser))}
-                                  className="px-2 py-0.5 text-xs rounded-full border border-slate-300 dark:border-slate-600 text-[#2D2A28] dark:text-white hover:border-[#0057BC] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  {ENTITY_ACCESS_LABELS[level]}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {entities.length === 0 ? (
-                          <p className="text-sm text-[#B0B5B5] py-3">
-                            Could not load the entity list from Dataverse. Roles and status can
-                            still be saved.
-                          </p>
-                        ) : (
-                          <div className="border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-100 dark:divide-slate-700">
-                            {entities.map((entity) => {
-                              const level = entityAccessLevel(formData.entityAccess, entity.name);
-                              return (
-                                <div
-                                  key={entity.id || entity.name}
-                                  className="flex items-center justify-between gap-3 px-3 py-2"
-                                >
-                                  <span className="text-sm font-medium text-[#2D2A28] dark:text-white truncate">
-                                    {entity.name}
-                                  </span>
-                                  <div className="flex gap-1 shrink-0">
-                                    {ENTITY_ACCESS_LEVELS.map((option) => (
-                                      <button
-                                        key={option}
-                                        type="button"
-                                        onClick={() => setEntityLevel(entity.name, option)}
-                                        disabled={!!(selectedUser && !canEdit(selectedUser))}
-                                        aria-pressed={level === option}
-                                        className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors duration-300 ease-in-out ${
-                                          level === option
-                                            ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white"
-                                            : "bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-slate-300 dark:border-slate-600 hover:border-slate-900 dark:hover:border-slate-300"
-                                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                                      >
-                                        {ENTITY_ACCESS_LABELS[option]}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Said plainly, because a rights screen that is only
-                            half wired is worse than one that says which half. */}
-                        <p className="mt-2 text-xs text-[#B0B5B5]">
-                          <span className="text-slate-600 dark:text-slate-300 font-medium">
-                            Edit is enforced; View is not yet.
-                          </span>{" "}
-                          Without Edit on an entity, this user cannot change its schedule
-                          amounts, delete its rows, add it to a schedule, or set its IIR
-                          mark - the server refuses each one. Reading is still open: they
-                          can see every entity&apos;s figures on the summaries, in the PDF
-                          and through the chatbot, whatever is set here. Admins are not
-                          narrowed by any of it.
-                        </p>
-                      </div>
-
-                      {/* **Ringi trial member** - only while the preview is on,
-                          where it means something. Saved at once, like Account
-                          Status below. An admin is a member by role, so there
-                          is nothing to tick (rule 25). */}
-                      {!isCreating && selectedUser && ringiPreview.enabled && (
-                        <div>
-                          <label className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1">
-                            Ringi application (preview)
-                          </label>
-                          {selectedUser.role === "admin" || isSuperAdmin(selectedUser.email) ? (
-                            <p className="text-sm text-slate-600 dark:text-slate-300">
-                              Admins can always open it - no tick needed.
-                            </p>
-                          ) : (
-                            <label className="flex items-center gap-3 px-4 py-3 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
-                              <input
-                                type="checkbox"
-                                checked={isRingiMember(selectedUser)}
-                                disabled={previewBusy !== null}
-                                onChange={(event) =>
-                                  savePreview(selectedUser.id, { profileId: selectedUser.id, member: event.target.checked })
-                                }
-                                className="w-4 h-4 accent-[#0057BC]"
-                              />
-                              <span className="text-sm text-[#2D2A28] dark:text-white">Ringi trial member</span>
-                              <span className="text-xs text-[#B0B5B5] ml-auto">
-                                {previewBusy === selectedUser.id ? "Saving..." : "Saved as soon as it is ticked"}
-                              </span>
-                            </label>
-                          )}
-                        </div>
-                      )}
 
                       {/* Active Status (only for existing users) */}
                       {!isCreating && selectedUser && canEdit(selectedUser) && (

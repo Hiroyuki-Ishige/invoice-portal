@@ -45,6 +45,7 @@ const SECONDARY_COLUMNS = [
   stringColumn(F.address3, "Address line 3", L.addressLine, false),
   stringColumn(F.tradingPartnerId, "Trading Partner ID", L.tradingPartnerId, false),
   stringColumn(F.paymentTerms, "Payment terms", L.paymentTerms, false),
+  stringColumn(F.defaultTitles, "Default titles", L.defaultTitles, false),
 ];
 
 function headers(token: string, json = false): Record<string, string> {
@@ -54,6 +55,8 @@ function headers(token: string, json = false): Record<string, string> {
     "OData-Version": "4.0",
     Accept: "application/json",
     ...(json ? { "Content-Type": "application/json; charset=utf-8" } : {}),
+    // Writes land in this solution (unmanaged) instead of the Default Solution.
+    ...(json && process.env.DATAVERSE_SOLUTION ? { "MSCRM.SolutionUniqueName": process.env.DATAVERSE_SOLUTION } : {}),
   };
 }
 

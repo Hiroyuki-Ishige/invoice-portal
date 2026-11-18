@@ -21,7 +21,7 @@
  * *this app's* endpoints to an account this app does not know (rule 10).
  */
 
-import { USER_PROFILE_FIELDS } from "@/lib/types/user-profile";
+import { USER_PROFILE_ENTITY_SET, USER_PROFILE_FIELDS } from "@/lib/types/user-profile";
 import { isSuperAdminCaller } from "@/lib/auth/super-admin";
 
 const DATAVERSE_URL = process.env.NEXT_PUBLIC_DATAVERSE_URL;
@@ -206,7 +206,7 @@ async function resolveRegistration(token: string): Promise<RegistrationState> {
       .join(" or ");
     const profiles = await dataverseGet(
       token,
-      `hi_userprofiles?$select=${USER_PROFILE_FIELDS.isActive}` +
+      `${USER_PROFILE_ENTITY_SET}?$select=${USER_PROFILE_FIELDS.isActive}` +
         `&$filter=${encodeURIComponent(filter)}&$top=${addresses.length}`
     );
     /* Includes the table not existing yet. "Could not ask" is not "absent"

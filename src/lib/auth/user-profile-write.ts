@@ -14,8 +14,9 @@ import {
   updateDataverseRecord,
 } from "@/lib/providers/dataverse/client";
 import { missingColumnFrom } from "@/lib/providers/dataverse/missing-column";
+import { USER_PROFILE_ENTITY_SET } from "@/lib/types/user-profile";
 
-const ENTITY_SET = "hi_userprofiles";
+const ENTITY_SET = USER_PROFILE_ENTITY_SET;
 
 /*
  * Dataverse names the offending column in its message, and it has **three**

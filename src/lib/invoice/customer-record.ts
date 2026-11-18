@@ -8,6 +8,8 @@
  * limits from here and must not carry the client.
  */
 
+import { INVOICE_TYPE_KEYS, type InvoiceTitle, type InvoiceType } from "./invoice-record";
+
 export const CUSTOMER_ENTITY_SET = "hi_invoicecustomers";
 export const CUSTOMER_LOGICAL_NAME = "hi_invoicecustomer";
 
@@ -21,6 +23,8 @@ export const CUSTOMER_FIELDS = {
   address3: "hi_addressline3",
   tradingPartnerId: "hi_tradingpartnerid",
   paymentTerms: "hi_paymentterms",
+  /** JSON: the title each kind of invoice starts from for this customer - `{"expense":"INVOICE","patent-rd":"DEBIT NOTE"}`. */
+  defaultTitles: "hi_defaulttitles",
 } as const;
 
 /** Column limits - the table is built with these and the routes refuse what exceeds them. */
@@ -30,12 +34,38 @@ export const CUSTOMER_LIMITS = {
   addressLine: 200,
   tradingPartnerId: 100,
   paymentTerms: 100,
+  defaultTitles: 200,
 } as const;
 
 /** The printed address has room for this many lines (the PDF's "To:" block). */
 export const MAX_ADDRESS_LINES = 3;
 
 export const DEFAULT_PAYMENT_TERMS = "Bank Transfer";
+
+export const DEFAULT_TITLE: InvoiceTitle = "INVOICE";
+export const TITLE_CHOICES: readonly InvoiceTitle[] = ["INVOICE", "DEBIT NOTE"];
+
+/** A stored or posted value as a title - anything else (empty, a typo, a column not filled yet) is the default. */
+export function titleOrDefault(value: unknown): InvoiceTitle {
+  return value === "DEBIT NOTE" ? "DEBIT NOTE" : DEFAULT_TITLE;
+}
+
+/** The title a customer starts from, for each kind of invoice. */
+export type DefaultTitles = Record<InvoiceType, InvoiceTitle>;
+
+/** Every kind filled in: from the stored JSON text or an object; a kind not mentioned is the default. */
+export function parseDefaultTitles(value: unknown): DefaultTitles {
+  let source: unknown = value;
+  if (typeof value === "string") {
+    try {
+      source = JSON.parse(value);
+    } catch {
+      source = null;
+    }
+  }
+  const record = typeof source === "object" && source !== null ? (source as Record<string, unknown>) : {};
+  return Object.fromEntries(INVOICE_TYPE_KEYS.map((type) => [type, titleOrDefault(record[type])])) as DefaultTitles;
+}
 
 export interface CustomerInput {
   code: string;
@@ -45,6 +75,8 @@ export interface CustomerInput {
   /** As printed after "Trading Partner ID:", e.g. `HOGT(ex-A412)`. */
   tradingPartnerId: string;
   paymentTerms: string;
+  /** The title each kind of invoice starts from for this customer; the person can still change it per document. */
+  defaultTitles: DefaultTitles;
 }
 
 export interface Customer extends CustomerInput {
@@ -62,6 +94,7 @@ export function mapDataverseToCustomer(record: Record<string, unknown>): Custome
       .filter((line) => line.trim() !== ""),
     tradingPartnerId: text(CUSTOMER_FIELDS.tradingPartnerId),
     paymentTerms: text(CUSTOMER_FIELDS.paymentTerms) || DEFAULT_PAYMENT_TERMS,
+    defaultTitles: parseDefaultTitles(record[CUSTOMER_FIELDS.defaultTitles]),
   };
 }
 
@@ -75,6 +108,7 @@ export function customerToDataverse(input: CustomerInput): Record<string, unknow
     [CUSTOMER_FIELDS.address3]: input.addressLines[2] ?? null,
     [CUSTOMER_FIELDS.tradingPartnerId]: input.tradingPartnerId,
     [CUSTOMER_FIELDS.paymentTerms]: input.paymentTerms,
+    [CUSTOMER_FIELDS.defaultTitles]: JSON.stringify(input.defaultTitles),
   };
 }
 
@@ -118,5 +152,7 @@ export function validateCustomerInput(body: unknown): CustomerValidation {
     return { ok: false, error: `Payment terms are limited to ${CUSTOMER_LIMITS.paymentTerms} characters.` };
   }
 
-  return { ok: true, value: { code, name, addressLines, tradingPartnerId, paymentTerms } };
+  const defaultTitles = parseDefaultTitles(b.defaultTitles);
+
+  return { ok: true, value: { code, name, addressLines, tradingPartnerId, paymentTerms, defaultTitles } };
 }

@@ -8,12 +8,9 @@
  *
  * ### It carries its own subject marker
  *
- * Ringi mail is prefixed `[Fm Ringi system]` so an inbox rule can gather it.
- * An invitation is not about a ringi, and a rule filtering that marker would
- * start catching a message that has no application number in it. So this one
- * says `[CAPEX Budget]` - a different marker, not the absence of one, because
- * mail from an app that arrives unmarked is the thing the prefix exists to
- * prevent.
+ * Every mail from this app is prefixed `[Invoice Portal]` (`APP_SUBJECT_PREFIX`
+ * in `send-mail.ts`) so an inbox rule can gather it. Mail from an app that
+ * arrives unmarked is the thing the prefix exists to prevent.
  *
  * ### It is sent from the admin who granted the access
  *

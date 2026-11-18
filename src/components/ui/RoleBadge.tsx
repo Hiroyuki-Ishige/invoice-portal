@@ -29,6 +29,10 @@ const ROLE_CLASSES: Record<UserRole, string> = {
      one hue, two weights). */
   capexadmin:
     "bg-white text-[#0057BC] border-[#0057BC]/40 dark:bg-transparent dark:text-[#00A3DE] dark:border-[#00A3DE]/40",
+  invoicepreparer:
+    "bg-white text-[#0057BC] border-[#0057BC]/40 dark:bg-transparent dark:text-[#00A3DE] dark:border-[#00A3DE]/40",
+  invoicereceiver:
+    "bg-white text-[#2D2A28] border-[#2D2A28]/40 dark:bg-transparent dark:text-slate-300 dark:border-slate-500",
   user: "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700",
 };
 

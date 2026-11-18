@@ -27,11 +27,12 @@ import {
   UserProfile,
   mapDataverseToUserProfile,
   mapUserProfileToDataverse,
+  USER_PROFILE_ENTITY_SET,
   USER_PROFILE_FIELDS,
 } from "@/lib/types/user-profile";
 import { readAdministratorContacts } from "@/lib/auth/administrator-contacts-server";
 
-const ENTITY_SET = "hi_userprofiles";
+const ENTITY_SET = USER_PROFILE_ENTITY_SET;
 
 /**
  * GET /api/auth/profile
@@ -246,7 +247,7 @@ export async function GET() {
         {
           error: "User profile table not configured",
           code: "TABLE_NOT_FOUND",
-          details: "Please create hi_userprofile table in Dataverse",
+          details: "Please create the user table in Admin > Setup",
         },
         { status: 503 }
       );

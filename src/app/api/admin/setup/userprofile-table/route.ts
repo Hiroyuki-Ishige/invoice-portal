@@ -1,7 +1,7 @@
 /**
- * Admin Setup API - Create hi_userprofile Table
+ * Admin Setup API - Create the Invoice Portal user table
  *
- * POST: Create the hi_userprofile table in Dataverse
+ * POST: Create the Invoice Portal user table (`hi_invoiceuserprofile`) in Dataverse
  * GET: Check if table exists
  *
  * This endpoint allows admins to create the user profile table
@@ -12,7 +12,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DATAVERSE_COOKIES } from "@/lib/providers/dataverse/middleware";
 import { checkSuperAdmin } from "@/lib/auth/require-signed-in";
-import { ROLE_LABELS, ROLE_VALUES, USER_ROLES, type UserRole } from "@/lib/types/user-profile";
+import { ROLE_LABELS, ROLE_VALUES, USER_PROFILE_LOGICAL_NAME, USER_ROLES, type UserRole } from "@/lib/types/user-profile";
+
+/** Writes land in this solution (unmanaged) instead of the Default Solution. */
+const SOLUTION_HEADER: Record<string, string> = process.env.DATAVERSE_SOLUTION
+  ? { "MSCRM.SolutionUniqueName": process.env.DATAVERSE_SOLUTION }
+  : {};
 import { describeColumns, type SchemaColumn } from "@/lib/utils/schema-report";
 
 const DATAVERSE_URL = process.env.NEXT_PUBLIC_DATAVERSE_URL;
@@ -72,12 +77,12 @@ export async function GET() {
 
     const exists = await checkTableExists(
       token,
-      `${PUBLISHER_PREFIX}_userprofile`
+      USER_PROFILE_LOGICAL_NAME
     );
 
     return NextResponse.json({
       exists,
-      tableName: `${PUBLISHER_PREFIX}_userprofile`,
+      tableName: USER_PROFILE_LOGICAL_NAME,
       // A table that is not there yet has no gaps to report - but the list is
       // still worth sending, so the card can show what creating it would build
       // rather than going blank at the one moment it is being decided.
@@ -102,7 +107,7 @@ export async function GET() {
 }
 
 /**
- * POST - Create the hi_userprofile table
+ * POST - Create the user table
  */
 export async function POST() {
   try {
@@ -128,7 +133,7 @@ export async function POST() {
     // Check if table already exists
     const exists = await checkTableExists(
       token,
-      `${PUBLISHER_PREFIX}_userprofile`
+      USER_PROFILE_LOGICAL_NAME
     );
     if (exists) {
       // The table predates the later roles (F&A-Admin, IIR-Admin) and the
@@ -157,7 +162,7 @@ export async function POST() {
          until somebody publishes. Say so rather than report it done (rule 10). */
       const unpublished =
         labels.renamed.length > 0 && !labels.published
-          ? " The new label is saved but not yet published - publish the hi_userprofile table in Power Apps to show it there."
+          ? " The new label is saved but not yet published - publish the Invoice Portal user table in Power Apps to show it there."
           : "";
 
       return NextResponse.json({
@@ -177,13 +182,13 @@ export async function POST() {
     // Create entity definition
     const entityDefinition = {
       "@odata.type": "Microsoft.Dynamics.CRM.EntityMetadata",
-      SchemaName: `${PUBLISHER_PREFIX}_userprofile`,
+      SchemaName: USER_PROFILE_LOGICAL_NAME,
       DisplayName: {
         "@odata.type": "Microsoft.Dynamics.CRM.Label",
         LocalizedLabels: [
           {
             "@odata.type": "Microsoft.Dynamics.CRM.LocalizedLabel",
-            Label: "User Profile",
+            Label: "Invoice Portal User",
             LanguageCode: 1033,
           },
         ],
@@ -193,7 +198,7 @@ export async function POST() {
         LocalizedLabels: [
           {
             "@odata.type": "Microsoft.Dynamics.CRM.LocalizedLabel",
-            Label: "User Profiles",
+            Label: "Invoice Portal Users",
             LanguageCode: 1033,
           },
         ],
@@ -203,7 +208,7 @@ export async function POST() {
         LocalizedLabels: [
           {
             "@odata.type": "Microsoft.Dynamics.CRM.LocalizedLabel",
-            Label: "User profiles for authorization",
+            Label: "Invoice Portal users for authorization (separate from CAPEX Budget Control)",
             LanguageCode: 1033,
           },
         ],
@@ -250,7 +255,7 @@ export async function POST() {
       ],
     };
 
-    console.log("[Setup API] Creating hi_userprofile table...");
+    console.log("[Setup API] Creating the user table...");
 
     const createResponse = await fetch(
       `${DATAVERSE_URL}/api/data/v9.2/EntityDefinitions`,
@@ -262,6 +267,7 @@ export async function POST() {
           "OData-Version": "4.0",
           Accept: "application/json",
           "Content-Type": "application/json; charset=utf-8",
+          ...SOLUTION_HEADER,
         },
         body: JSON.stringify(entityDefinition),
       }
@@ -486,7 +492,7 @@ const ROLE_COLUMN = {
 async function addColumns(
   token: string
 ): Promise<{ success: string[]; failed: string[] }> {
-  const entityLogicalName = `${PUBLISHER_PREFIX}_userprofile`;
+  const entityLogicalName = USER_PROFILE_LOGICAL_NAME;
   const baseUrl = `${DATAVERSE_URL}/api/data/v9.2/EntityDefinitions(LogicalName='${entityLogicalName}')/Attributes`;
 
   const results = {
@@ -506,6 +512,7 @@ async function addColumns(
         "OData-Version": "4.0",
         Accept: "application/json",
         "Content-Type": "application/json; charset=utf-8",
+          ...SOLUTION_HEADER,
       },
       body: JSON.stringify(column),
     });
@@ -531,6 +538,7 @@ async function addColumns(
       "OData-Version": "4.0",
       Accept: "application/json",
       "Content-Type": "application/json; charset=utf-8",
+          ...SOLUTION_HEADER,
     },
     body: JSON.stringify(roleColumn),
   });
@@ -634,7 +642,7 @@ const PRIMARY_EMAIL_COLUMN = {
 const EXPECTED_COLUMNS = [PRIMARY_EMAIL_COLUMN, ...SECONDARY_COLUMNS, ROLE_COLUMN];
 
 async function readSchemaGaps(token: string): Promise<SchemaGaps> {
-  const entity = `${PUBLISHER_PREFIX}_userprofile`;
+  const entity = USER_PROFILE_LOGICAL_NAME;
   const headers = {
     Authorization: `Bearer ${token}`,
     "OData-MaxVersion": "4.0",
@@ -698,7 +706,7 @@ async function readSchemaGaps(token: string): Promise<SchemaGaps> {
  * an existing table: F&A-Admin, then CAPEX-Admin (2026-09-28; IIR-Admin since
  * 2026-10-17, which `ensureRoleOptionLabels` carries to an existing table).
  */
-const LATER_ROLES: readonly UserRole[] = ["faadmin", "capexadmin"];
+const LATER_ROLES: readonly UserRole[] = ["faadmin", "invoicepreparer", "invoicereceiver"];
 
 /** One option of hi_role as Dataverse holds it: its value and English label. */
 interface RoleOption {
@@ -716,7 +724,7 @@ interface RoleOption {
  */
 async function readRoleOptions(token: string): Promise<RoleOption[] | null> {
   const url =
-    `${DATAVERSE_URL}/api/data/v9.2/EntityDefinitions(LogicalName='${PUBLISHER_PREFIX}_userprofile')` +
+    `${DATAVERSE_URL}/api/data/v9.2/EntityDefinitions(LogicalName='${USER_PROFILE_LOGICAL_NAME}')` +
     `/Attributes(LogicalName='${PUBLISHER_PREFIX}_role')/Microsoft.Dynamics.CRM.PicklistAttributeMetadata` +
     `?$select=LogicalName&$expand=OptionSet`;
 
@@ -795,7 +803,7 @@ function staleRoleLabels(options: RoleOption[] | null): StaleRoleLabel[] {
  * column rather than thrown.
  */
 async function ensureLaterColumns(token: string): Promise<string[]> {
-  const url = `${DATAVERSE_URL}/api/data/v9.2/EntityDefinitions(LogicalName='${PUBLISHER_PREFIX}_userprofile')/Attributes`;
+  const url = `${DATAVERSE_URL}/api/data/v9.2/EntityDefinitions(LogicalName='${USER_PROFILE_LOGICAL_NAME}')/Attributes`;
   const added: string[] = [];
 
   for (const column of LATER_COLUMNS) {
@@ -807,6 +815,7 @@ async function ensureLaterColumns(token: string): Promise<string[]> {
         "OData-Version": "4.0",
         Accept: "application/json",
         "Content-Type": "application/json; charset=utf-8",
+          ...SOLUTION_HEADER,
       },
       body: JSON.stringify(column.definition),
     });
@@ -845,9 +854,10 @@ async function ensureRoleOption(
       "OData-Version": "4.0",
       Accept: "application/json",
       "Content-Type": "application/json; charset=utf-8",
+          ...SOLUTION_HEADER,
     },
     body: JSON.stringify({
-      EntityLogicalName: `${PUBLISHER_PREFIX}_userprofile`,
+      EntityLogicalName: USER_PROFILE_LOGICAL_NAME,
       AttributeLogicalName: `${PUBLISHER_PREFIX}_role`,
       Value: ROLE_VALUES[role],
       Label: {
@@ -890,6 +900,7 @@ function actionHeaders(token: string): Record<string, string> {
     "OData-Version": "4.0",
     Accept: "application/json",
     "Content-Type": "application/json; charset=utf-8",
+          ...SOLUTION_HEADER,
   };
 }
 
@@ -920,7 +931,7 @@ async function ensureRoleOptionLabels(token: string): Promise<{
       method: "POST",
       headers: actionHeaders(token),
       body: JSON.stringify({
-        EntityLogicalName: `${PUBLISHER_PREFIX}_userprofile`,
+        EntityLogicalName: USER_PROFILE_LOGICAL_NAME,
         AttributeLogicalName: `${PUBLISHER_PREFIX}_role`,
         Value: ROLE_VALUES[change.role],
         Label: {
@@ -955,11 +966,11 @@ async function ensureRoleOptionLabels(token: string): Promise<{
     method: "POST",
     headers: actionHeaders(token),
     body: JSON.stringify({
-      ParameterXml: `<importexportxml><entities><entity>${PUBLISHER_PREFIX}_userprofile</entity></entities></importexportxml>`,
+      ParameterXml: `<importexportxml><entities><entity>${USER_PROFILE_LOGICAL_NAME}</entity></entities></importexportxml>`,
     }),
   });
   if (!publish.ok) {
-    console.error(`[Setup API] Publishing hi_userprofile failed: ${(await publish.text()).slice(0, 300)}`);
+    console.error(`[Setup API] Publishing the user table failed: ${(await publish.text()).slice(0, 300)}`);
   }
 
   return { renamed, failed, published: publish.ok };

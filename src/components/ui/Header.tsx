@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, LogIn, LogOut, Moon, Sun, ChevronDown } from "lucide-react";
-import { useRingiPreview } from "@/hooks/useRingiPreview";
-import { PreviewChip } from "@/components/ui/PreviewChip";
 import { areaForPath, levelFor } from "@/lib/auth/permissions";
 import { useEffectivePermissions } from "@/hooks/useRolePermissions";
 import { NavChildLink, isNavGroup, screenNameFor, useNavMenu } from "@/components/ui/nav-menu";
@@ -35,9 +33,6 @@ export function Header() {
   /* The one menu (`nav-menu`): the side rail draws it on a desktop, this header
      on a phone. The ringi is marked for a Ringi preview trial member. */
   const permissions = useEffectivePermissions();
-  const { enabled: ringiInPreview } = useRingiPreview();
-  const previewChip = (href: string) =>
-    ringiInPreview && areaForPath(href)?.id === "invoices" ? <PreviewChip /> : null;
   const menuItems = useNavMenu();
 
   /* What to call the page in the chrome - the same list the menu draws, and
@@ -280,7 +275,6 @@ export function Header() {
                     {item.icon}
                   </span>
                   {item.label}
-                  {previewChip(item.href)}
                 </Link>
               );
             })}

@@ -20,6 +20,7 @@ import {
   mapUserProfileToDataverse,
   sanitizeEntityAccess,
   SUPER_ADMIN_EMAILS,
+  USER_PROFILE_ENTITY_SET,
   USER_PROFILE_FIELDS,
   isUserRole,
   type EntityAccess,
@@ -40,7 +41,7 @@ import { clearRegistrationCache } from "@/lib/auth/registration";
 import { updateProfileRecord, missingColumnWarning } from "@/lib/auth/user-profile-write";
 import { handleApiError } from "@/lib/utils/api-helpers";
 
-const ENTITY_SET = "hi_userprofiles";
+const ENTITY_SET = USER_PROFILE_ENTITY_SET;
 
 /**
  * Whether deleting this profile is undone by the next sign-in.

@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import useSWR from "swr";
-import { useRingiPreview } from "@/hooks/useRingiPreview";
 import { useAuth } from "@/components/providers/AuthProvider";
 import {
   DEFAULT_PERMISSIONS,
@@ -54,22 +53,11 @@ export function useRolePermissions(): {
 }
 
 /**
- * **The table as it applies to this caller** - the stored one, with the ringi
- * closed while the Ringi preview is on and they are not a trial member
- * (`lib/auth/ringi-preview`). What the menu, the dashboard and the screen gate
- * read; Admin > Role Permissions edits the stored table and never this one.
+ * The table as it applies to this caller. What the menu, the dashboard and the screen gate read;
+ * Admin > Role Permissions edits the stored table.
  */
 export function useEffectivePermissions(): PermissionTable {
-  const { table } = useRolePermissions();
-  const { blocked } = useRingiPreview();
-  return useMemo(() => {
-    if (!blocked) return table;
-    const closed = {} as PermissionTable;
-    for (const role of Object.keys(table) as Array<keyof PermissionTable>) {
-      closed[role] = { ...table[role], ringi: "none" };
-    }
-    return closed;
-  }, [table, blocked]);
+  return useRolePermissions().table;
 }
 
 /**

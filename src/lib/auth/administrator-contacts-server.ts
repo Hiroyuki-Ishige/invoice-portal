@@ -7,13 +7,13 @@
  */
 
 import { queryDataverse } from "@/lib/providers/dataverse/client";
-import { ROLE_VALUES, USER_PROFILE_FIELDS } from "@/lib/types/user-profile";
+import { ROLE_VALUES, USER_PROFILE_ENTITY_SET, USER_PROFILE_FIELDS } from "@/lib/types/user-profile";
 import {
   dedupeAdministrators,
   type AdministratorContact,
 } from "@/lib/auth/administrator-contacts";
 
-const ENTITY_SET = "hi_userprofiles";
+const ENTITY_SET = USER_PROFILE_ENTITY_SET;
 
 /**
  * The active Admin profiles, or **null when they could not be read**.
