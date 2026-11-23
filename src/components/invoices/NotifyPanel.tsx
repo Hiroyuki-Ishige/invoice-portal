@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Eye, Loader2, Mail } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -61,17 +61,60 @@ export function NotifyPanel({
   const [status, setStatus] = useState<Record<string, Status>>({});
   /** The mail being previewed (nothing is sent), if the dialog is open. */
   const [preview, setPreview] = useState<Omit<MailPreviewProps, "onClose"> | null>(null);
+  /**
+   * The addresses (and so the companies) taken **out** of this send - everything is in until unticked, which is
+   * the default asked for. Keyed `to|company|address` / `cc|company|address`. A company with no To left is skipped.
+   */
+  const [off, setOff] = useState<Set<string>>(new Set());
+  /** True from the moment Send is pressed to the end of the run - before any row says "sending" (the token is awaited first), so a quick second press cannot start a second run and mail everybody twice. */
+  const running = useRef(false);
 
   const groups = new Map<string, NotifyItem[]>();
   for (const item of items) {
     const key = item.invoice.customerCode.toLowerCase();
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
+  const addrKey = (kind: "to" | "cc", company: string, address: string) => `${kind}|${company}|${address}`;
   const rows = [...groups.entries()].map(([key, list]) => {
     const customer = customers.find((c) => c.code.toLowerCase() === key);
-    return { key, list, customer, to: customer?.notifyTo ?? [], cc: customer?.notifyCc ?? [] };
+    const to = customer?.notifyTo ?? [];
+    const cc = customer?.notifyCc ?? [];
+    return {
+      key,
+      list,
+      customer,
+      to,
+      cc,
+      toSel: to.filter((a) => !off.has(addrKey("to", key, a))),
+      ccSel: cc.filter((a) => !off.has(addrKey("cc", key, a))),
+    };
   });
-  const sendable = rows.filter((r) => r.to.length > 0 && status[r.key]?.state !== "sent");
+  type Row = (typeof rows)[number];
+  /** Rows that could still be sent (a recipient exists, not sent yet) - what the ticks are about. */
+  const choosable = rows.filter((r) => r.to.length > 0 && status[r.key]?.state !== "sent");
+  const sendable = choosable.filter((r) => r.toSel.length > 0);
+
+  /* Nothing may be re-ticked while mails are going out: the send reads the ticks as they were when it started. */
+  const toggleAddress = (kind: "to" | "cc", company: string, address: string) =>
+    setOff((current) => {
+      if (rows.some((r) => status[r.key]?.state === "sending")) return current;
+      const next = new Set(current);
+      const key = addrKey(kind, company, address);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  /** Tick or untick every address of the given companies at once. */
+  const setRows = (targets: Row[], on: boolean) =>
+    setOff((current) => {
+      if (rows.some((r) => status[r.key]?.state === "sending")) return current;
+      const next = new Set(current);
+      for (const row of targets) {
+        for (const address of row.to) (on ? next.delete(addrKey("to", row.key, address)) : next.add(addrKey("to", row.key, address)));
+        for (const address of row.cc) (on ? next.delete(addrKey("cc", row.key, address)) : next.add(addrKey("cc", row.key, address)));
+      }
+      return next;
+    });
 
   const senderName = user?.userMetadata?.displayName || user?.email || "Invoice Portal";
 
@@ -93,12 +136,17 @@ export function NotifyPanel({
     };
   }
 
-  function previewRow(row: (typeof rows)[number]) {
+  function previewRow(row: Row) {
     const withPdf = row.list.filter((item) => item.fileUrl || item.makePdf);
     const { subject, html } = buildInvoiceNotice({ ...noticeFor(row.list), attached: attach && withPdf.length > 0 });
     setPreview({
-      to: row.to.length > 0 ? row.to.join("; ") : `(no recipient is set for ${row.customer?.code ?? "this company"} - no mail would be sent)`,
-      cc: row.cc.join("; "),
+      to:
+        row.toSel.length > 0
+          ? row.toSel.join("; ")
+          : row.to.length > 0
+            ? "(no recipient is ticked - no mail would be sent)"
+            : `(no recipient is set for ${row.customer?.code ?? "this company"} - no mail would be sent)`,
+      cc: row.ccSel.join("; "),
       subject: `${APP_SUBJECT_PREFIX} ${subject}`,
       attachments: attach ? withPdf.map((item) => item.fileName ?? `${item.invoice.number}.pdf`) : [],
       html,
@@ -106,6 +154,16 @@ export function NotifyPanel({
   }
 
   async function sendAll() {
+    if (running.current) return;
+    running.current = true;
+    try {
+      await sendRows();
+    } finally {
+      running.current = false;
+    }
+  }
+
+  async function sendRows() {
     const token = await getGraphAccessToken();
     for (const row of sendable) {
       setStatus((s) => ({ ...s, [row.key]: { state: "sending" } }));
@@ -125,8 +183,8 @@ export function NotifyPanel({
         }
         const outcome = await sendInvoiceNotice(
           noticeFor(row.list),
-          row.to,
-          row.cc,
+          row.toSel,
+          row.ccSel,
           pdfs,
           token
         );
@@ -165,6 +223,20 @@ export function NotifyPanel({
         .
       </p>
 
+      {choosable.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span className="text-slate-600 dark:text-slate-300">
+            {sendable.length} of {choosable.length} {choosable.length === 1 ? "mail" : "mails"} selected
+          </span>
+          <button type="button" onClick={() => setRows(choosable, true)} disabled={sending} className="text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-40 disabled:no-underline">
+            Select all
+          </button>
+          <button type="button" onClick={() => setRows(choosable, false)} disabled={sending} className="text-slate-500 dark:text-slate-400 hover:underline disabled:opacity-40 disabled:no-underline">
+            Select none
+          </button>
+        </div>
+      )}
+
       <ul className="divide-y divide-slate-100 dark:divide-slate-800">
         {rows.map((row) => {
           const st = status[row.key] ?? { state: "idle" as const };
@@ -172,6 +244,16 @@ export function NotifyPanel({
             <li key={row.key} className="py-3 text-sm space-y-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className="font-medium text-[#2D2A28] dark:text-white">
+                  {row.to.length > 0 && st.state !== "sent" && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Send the mail to ${row.list[0].invoice.customerName}`}
+                      className="mr-2 w-4 h-4 align-[-2px] accent-[#0057BC]"
+                      checked={row.toSel.length > 0}
+                      disabled={sending}
+                      onChange={(e) => setRows([row], e.target.checked)}
+                    />
+                  )}
                   {row.list[0].invoice.customerName}{" "}
                   <span className="font-normal text-slate-500 dark:text-slate-400">({row.list.map((i) => i.invoice.number).join(", ")})</span>
                 </span>
@@ -195,10 +277,34 @@ export function NotifyPanel({
                 )}
               </div>
               {row.to.length > 0 ? (
-                <p className="text-slate-600 dark:text-slate-300 break-all">
-                  To: {row.to.join("; ")}
-                  {row.cc.length > 0 && <> &nbsp;·&nbsp; Cc: {row.cc.join("; ")}</>}
-                </p>
+                <div className="space-y-1 text-slate-600 dark:text-slate-300">
+                  {(["to", "cc"] as const).map((kind) => {
+                    const addresses = kind === "to" ? row.to : row.cc;
+                    if (addresses.length === 0) return null;
+                    return (
+                      <div key={kind} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span className="w-6 text-slate-500 dark:text-slate-400">{kind === "to" ? "To:" : "Cc:"}</span>
+                        {addresses.map((address) => (
+                          <label key={address} className={`inline-flex items-center gap-1.5 break-all ${st.state === "sent" ? "" : "cursor-pointer"}`}>
+                            {st.state !== "sent" && (
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 accent-[#0057BC]"
+                                checked={!off.has(addrKey(kind, row.key, address))}
+                                disabled={sending}
+                                onChange={() => toggleAddress(kind, row.key, address)}
+                              />
+                            )}
+                            {address}
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {st.state !== "sent" && row.toSel.length === 0 && (
+                    <p className="text-slate-500 dark:text-slate-400">No To address is ticked, so no mail will be sent to this company.</p>
+                  )}
+                </div>
               ) : (
                 <p className="text-slate-500 dark:text-slate-400">
                   No recipient is set for {row.customer?.code ?? "this company"}, so no mail will be sent. Set it in{" "}
@@ -227,7 +333,11 @@ export function NotifyPanel({
           className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold transition-colors duration-300 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed ${PRIMARY_ACTION_FILL}`}
         >
           {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-          {sendable.length === 0 ? "Nothing to send" : `Send ${sendable.length} ${sendable.length === 1 ? "mail" : "mails"}`}
+          {sendable.length === 0
+            ? choosable.length > 0
+              ? "No mail selected"
+              : "Nothing to send"
+            : `Send ${sendable.length} ${sendable.length === 1 ? "mail" : "mails"}`}
         </button>
         <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
           <input type="checkbox" checked={attach} onChange={(e) => setAttach(e.target.checked)} className="w-4 h-4 accent-[#0057BC]" />
