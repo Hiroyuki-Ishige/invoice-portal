@@ -596,7 +596,7 @@ export async function checkMayDeleteEmptyItems(): Promise<PrivilegedCheck> {
 }
 
 /**
- * Admin, F&A-Admin or Invoice preparer - who may cancel an issued invoice
+ * Admin or F&A Admin - who may cancel an issued invoice
  * (`mayCancelInvoices`), reporting which of the two failures occurred.
  */
 export async function checkMayCancelInvoices(): Promise<PrivilegedCheck> {
@@ -605,7 +605,7 @@ export async function checkMayCancelInvoices(): Promise<PrivilegedCheck> {
   const allowed = await requireProfileRole(
     (role) => mayCancelInvoices(role),
     "Cancel an invoice",
-    "the Admin, F&A-Admin or Invoice preparer role"
+    "the Admin or F&A Admin role"
   );
   return allowed ? { user: allowed } : { user: null, reason: "not_permitted" };
 }

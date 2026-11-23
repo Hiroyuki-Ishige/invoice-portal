@@ -13,8 +13,11 @@ Role Permissions / Setup (ユーザー・請求書・取引先の各テーブル
 Excel 読込、`build-pdf` = PDF、`invoice-number` = `HYM1AC{会計年度}-{連番}`、会計年度は 4/1 始まり)。
 **段階 2 (2026-11-18、テーブルは `Invoice-Portal` ソリューションに作成済み)**: 発行すると `hi_invoice` / `hi_invoiceline` に保存し、
 連番は `hi_invoicesequence` から自動採番 (`lib/invoice/sequence.ts`、`If-Match` で重複なし、年度内 999 まで)。
-保存済み一覧・PDF 再生成・取消 (`/invoices`)。作成は Admin / F&A-Admin / Invoice preparer / Invoice receiver、
-取消は Admin / F&A-Admin / Invoice preparer (`mayCancelInvoices`)。新ロール `invoicepreparer` (値 5) / `invoicereceiver` (値 6)。
+保存済み一覧・PDF 再生成・取消 (`/invoices`)。作成・取消とも Admin / F&A Admin (`mayCancelInvoices`)。
+**ロールは Admin / F&A Admin / User の 3 つ (2026-11-23)**: `invoicepreparer` (値 5) / `invoicereceiver` (値 6) は廃止し、
+Dataverse の選択肢は残したまま `getRoleName` が User と読む。Admin > Setup の Top up が、その値の行を User に書き換え、
+F&A-Admin の選択肢名を F&A Admin に直す (`migrateRetiredRoles`)。User Management (`/admin/users`) は 1 列・2 カード
+(Invite New User / All Users) に作り直した。
 テーブルは Admin > Setup の「Invoice tables」、年度ごとの最終番号は「Invoice numbers」で設定。設計: `docs/invoice-design.md`。
 テーブルの作成先ソリューションは環境変数 `DATAVERSE_SOLUTION` (`InvoicePortal`)。未設定なら既定ソリューションに入る。
 **取引先マスタ**: Admin > Customers (`/admin/customers`, 行 `admin-customers`) で登録し、Dataverse の `hi_invoicecustomer`
@@ -77,7 +80,7 @@ Azure AD / MSAL.js · Lucide · SWR · isomorphic-dompurify · jsPDF + autotable
 
 - **`hi_` プレフィックス・`hi_userprofiles`・`hi_appsettings`** をそのまま使う。
   請求書用の新テーブルも `hi_` に揃えるか、別プレフィックスにするか決める。
-- **ロール**: `user / invoicereceiver / invoicepreparer / faadmin / admin` (`lib/types/user-profile.ts`)。IIR-Admin (`capexadmin`) は選択肢から外した (値 4 は既存データ用に残す)。`SUPER_ADMIN_EMAILS` は要確認。
+- **ロール**: `user / faadmin / admin` (`lib/types/user-profile.ts`)。IIR-Admin (`capexadmin`、値 4) と廃止した invoice 2 ロール (値 5, 6) は選択肢から外した (既存データ用に値だけ残す)。`SUPER_ADMIN_EMAILS` は要確認。
 - **ユーザーテーブルは Invoice Portal 専用** `hi_invoiceuserprofile` (2026-11-18、CAPEX の `hi_userprofile` とは別)。Ringi preview (試用メンバー) と Budget plan access (Entity access) の画面は削除済み。
 - **メール**: 件名プレフィックス `[CAPEX Budget]` / `[Fm Ringi system]` (`lib/notify/send-mail.ts`)、
   招待・登録依頼メールの文言に CAPEX が残る。

@@ -12,7 +12,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DATAVERSE_COOKIES } from "@/lib/providers/dataverse/middleware";
 import { checkSuperAdmin } from "@/lib/auth/require-signed-in";
-import { ROLE_LABELS, ROLE_VALUES, USER_PROFILE_LOGICAL_NAME, USER_ROLES, type UserRole } from "@/lib/types/user-profile";
+import {
+  RETIRED_ROLE_VALUES,
+  ROLE_LABELS,
+  ROLE_VALUES,
+  USER_PROFILE_ENTITY_SET,
+  USER_PROFILE_FIELDS,
+  USER_PROFILE_LOGICAL_NAME,
+  USER_ROLES,
+  type UserRole,
+} from "@/lib/types/user-profile";
 
 /** Writes land in this solution (unmanaged) instead of the Default Solution. */
 const SOLUTION_HEADER: Record<string, string> = process.env.DATAVERSE_SOLUTION
@@ -80,16 +89,31 @@ export async function GET() {
       USER_PROFILE_LOGICAL_NAME
     );
 
+    const schema = exists ? await readSchemaGaps(token) : null;
+    /* What the Update button would do - empty means there is nothing to press for. */
+    const pending: string[] = schema
+      ? [
+          ...schema.missingColumns.map((column) => `column ${column}`),
+          ...schema.missingRoleOptions.map((label) => `the ${label} role option`),
+          ...schema.staleRoleLabels.map(({ from, to }) => `rename ${from} to ${to}`),
+          ...(schema.retiredRoleRows ? [`${schema.retiredRoleRows} user(s) on a retired invoice role`] : []),
+          // A check that could not run is not "nothing to update" - leave the button pressable (rule 6).
+          ...(!schema.checked || schema.retiredRoleRows === null ? ["could not check everything - press Update to retry"] : []),
+        ]
+      : [];
+
     return NextResponse.json({
       exists,
+      pending,
       tableName: USER_PROFILE_LOGICAL_NAME,
       // A table that is not there yet has no gaps to report - but the list is
       // still worth sending, so the card can show what creating it would build
       // rather than going blank at the one moment it is being decided.
-      schema: exists
-        ? await readSchemaGaps(token)
+      schema: schema
+        ? schema
         : {
             checked: false,
+            retiredRoleRows: null,
             missingColumns: [],
             missingRoleOption: false,
             missingRoleOptions: [],
@@ -144,8 +168,16 @@ export async function POST() {
       const rolesAdded = await ensureLaterRoleOptions(token);
       const columnsAdded = await ensureLaterColumns(token);
       const labels = await ensureRoleOptionLabels(token);
+      const retired = await migrateRetiredRoles(token);
 
       const done = [
+        ...(retired.migrated > 0
+          ? [`moved ${retired.migrated} user${retired.migrated === 1 ? "" : "s"} from a retired invoice role to User`]
+          : []),
+        ...(retired.unreadable ? ["could not read the user rows to check for retired invoice roles"] : []),
+        ...(retired.failed > 0
+          ? [`could not move ${retired.failed} user${retired.failed === 1 ? "" : "s"} from a retired invoice role to User`]
+          : []),
         ...(rolesAdded.length > 0 || columnsAdded.length > 0
           ? [
               `added ${[
@@ -166,7 +198,7 @@ export async function POST() {
           : "";
 
       return NextResponse.json({
-        success: labels.failed.length === 0,
+        success: labels.failed.length === 0 && retired.failed === 0 && !retired.unreadable,
         message:
           (done.length > 0
             ? `Table already exists - ${done.join("; ")}.`
@@ -617,6 +649,8 @@ const LATER_COLUMNS = [
  */
 interface SchemaGaps {
   checked: boolean;
+  /** Profiles still holding a retired invoice role; `null` when they could not be read. */
+  retiredRoleRows: number | null;
   missingColumns: string[];
   missingRoleOption: boolean;
   /** The role options missing, by label ("IIR-Admin"). */
@@ -660,6 +694,7 @@ async function readSchemaGaps(token: string): Promise<SchemaGaps> {
     if (!response.ok) {
       return {
         checked: false,
+            retiredRoleRows: null,
         missingColumns: [],
         missingRoleOption: false,
         missingRoleOptions: [],
@@ -680,8 +715,11 @@ async function readSchemaGaps(token: string): Promise<SchemaGaps> {
     const options = present.has(`${PUBLISHER_PREFIX}_role`) ? await readRoleOptions(token) : null;
     const missingRoles = missingRoleOptions(options);
 
+    const retiredRows = await readRetiredRoleRowIds(token).catch(() => null);
+
     return {
       checked: true,
+      retiredRoleRows: retiredRows === null ? null : retiredRows.length,
       missingColumns,
       missingRoleOption: missingRoles.length > 0,
       missingRoleOptions: missingRoles.map((role) => ROLE_LABELS[role]),
@@ -692,6 +730,7 @@ async function readSchemaGaps(token: string): Promise<SchemaGaps> {
     console.error("[Setup API] Could not read the user profile schema:", error);
     return {
       checked: false,
+            retiredRoleRows: null,
       missingColumns: [],
       missingRoleOption: false,
       missingRoleOptions: [],
@@ -706,7 +745,70 @@ async function readSchemaGaps(token: string): Promise<SchemaGaps> {
  * an existing table: F&A-Admin, then CAPEX-Admin (2026-09-28; IIR-Admin since
  * 2026-10-17, which `ensureRoleOptionLabels` carries to an existing table).
  */
-const LATER_ROLES: readonly UserRole[] = ["faadmin", "invoicepreparer", "invoicereceiver"];
+const LATER_ROLES: readonly UserRole[] = ["faadmin"];
+
+/**
+ * **Rewrites every profile that still holds a retired role to User** (Invoice preparer
+ * 5 and Invoice receiver 6, retired 2026-11-23 - the three roles are Admin, F&A Admin and
+ * User). Idempotent: with none left it reads, finds nothing and writes nothing.
+ *
+ * It runs from the Top up button, under the super admin who pressed it, and it **only**
+ * ever writes `hi_role` to the User value - never anything else on the row. The options 5
+ * and 6 stay in the choice column: deleting an option a row might still hold is the one
+ * thing here that cannot be undone. Returns how many rows were changed, and how many it
+ * could not change (rule 6: a failure is reported, not counted as done).
+ */
+const DATAVERSE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function dataverseHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    "OData-MaxVersion": "4.0",
+    "OData-Version": "4.0",
+    Accept: "application/json",
+  };
+}
+
+/**
+ * The ids of the profiles that still hold a retired role, or `null` when they could not be
+ * read - "could not ask" is never "none" (rule 6), because the Update button greys itself
+ * out on none.
+ */
+async function readRetiredRoleRowIds(token: string): Promise<string[] | null> {
+  const filter = RETIRED_ROLE_VALUES.map((value) => `${USER_PROFILE_FIELDS.role} eq ${value}`).join(" or ");
+  const url =
+    `${DATAVERSE_URL}/api/data/v9.2/${USER_PROFILE_ENTITY_SET}` +
+    `?$select=${USER_PROFILE_FIELDS.id}&$filter=${encodeURIComponent(filter)}&$top=500`;
+  const response = await fetch(url, { headers: dataverseHeaders(token), signal: AbortSignal.timeout(METADATA_TIMEOUT_MS) });
+  if (!response.ok) return null;
+  const rows = ((await response.json()) as { value?: Array<Record<string, unknown>> }).value ?? [];
+  // An id off the wire is `unknown` until looked at, and it goes into a URL (rule 12).
+  return rows.flatMap((row) => {
+    const id = row[USER_PROFILE_FIELDS.id];
+    return typeof id === "string" && DATAVERSE_ID.test(id) ? [id] : [];
+  });
+}
+
+async function migrateRetiredRoles(
+  token: string
+): Promise<{ migrated: number; failed: number; unreadable: boolean }> {
+  const ids = await readRetiredRoleRowIds(token);
+  if (ids === null) return { migrated: 0, failed: 0, unreadable: true };
+
+  let migrated = 0;
+  let failed = 0;
+  for (const id of ids) {
+    const patched = await fetch(`${DATAVERSE_URL}/api/data/v9.2/${USER_PROFILE_ENTITY_SET}(${id})`, {
+      method: "PATCH",
+      headers: { ...dataverseHeaders(token), "Content-Type": "application/json; charset=utf-8", "If-Match": "*" },
+      body: JSON.stringify({ [USER_PROFILE_FIELDS.role]: ROLE_VALUES.user }),
+      signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+    });
+    if (patched.ok) migrated++;
+    else failed++;
+  }
+  return { migrated, failed, unreadable: false };
+}
 
 /** One option of hi_role as Dataverse holds it: its value and English label. */
 interface RoleOption {

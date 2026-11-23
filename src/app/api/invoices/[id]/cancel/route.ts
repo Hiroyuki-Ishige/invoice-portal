@@ -2,7 +2,7 @@
  * Invoice Cancel API
  *
  * POST: cancel an issued invoice. The number stays (never reused) and the record stays as
- * Cancelled. Admin, F&A-Admin and Invoice preparer only (`mayCancelInvoices`).
+ * Cancelled. Admin and F&A Admin only (`mayCancelInvoices`).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       return who.reason === "not_signed_in"
         ? deniedResponse("not_signed_in")
         : NextResponse.json(
-            { error: "Only an Admin, F&A-Admin or Invoice preparer may cancel an invoice.", code: "ROLE_PERMISSION" },
+            { error: "Only an Admin or F&A Admin may cancel an invoice.", code: "ROLE_PERMISSION" },
             { status: 403 }
           );
     }

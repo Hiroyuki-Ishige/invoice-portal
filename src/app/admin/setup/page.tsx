@@ -12,7 +12,13 @@ import { AdminScreenGate, useAdminAccess } from "@/components/admin/AdminScreenG
  * to sign anybody in. Invoice tables are added here as they are designed -
  * tables come only from Admin > Setup (CLAUDE.md).
  */
-interface TableStatus { exists: boolean; tableName: string; missingColumns?: string[] }
+interface TableStatus {
+  exists: boolean;
+  tableName: string;
+  missingColumns?: string[];
+  /** What Update would change. Empty means the table is up to date and the button has nothing to do. */
+  pending?: string[];
+}
 
 /**
  * One table's card: whether it exists, and the button that creates it or tops up its
@@ -22,15 +28,19 @@ function TableCard({ title, endpoint }: { title: string; endpoint: string }) {
   const [status, setStatus] = useState<TableStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** The check itself failed - the card says so and offers Retry, rather than waiting forever. */
+  const [checkFailed, setCheckFailed] = useState(false);
 
   const check = useCallback(async () => {
     try {
       const response = await fetch(endpoint);
       const data = await response.json();
-      if (!response.ok) { setMessage(data.error || "Could not check the table."); return; }
+      if (!response.ok) { setMessage(data.error || "Could not check the table."); setCheckFailed(true); return; }
       setStatus(data);
+      setCheckFailed(false);
     } catch {
       setMessage("Network error. Could not check the table.");
+      setCheckFailed(true);
     }
   }, [endpoint]);
 
@@ -50,7 +60,10 @@ function TableCard({ title, endpoint }: { title: string; endpoint: string }) {
     }
   };
 
-  const missing = status?.missingColumns?.length ?? 0;
+  const pending = status?.pending ?? status?.missingColumns ?? [];
+  /* Greyed out when the table is there and nothing is out of date. A check that could not
+     run leaves it pressable (message shown) - never "nothing to do" by default (rule 6). */
+  const upToDate = status !== null && status.exists && pending.length === 0;
   return (
     <GlassCard className="p-5">
       <div className="flex items-center gap-3">
@@ -59,21 +72,22 @@ function TableCard({ title, endpoint }: { title: string; endpoint: string }) {
           <p className="font-semibold text-[#2D2A28] dark:text-white">{title}</p>
           <p className="text-sm text-[#B0B5B5]">
             {status === null
-              ? "Checking..."
+              ? checkFailed ? "Could not check the table" : "Checking..."
               : !status.exists
                 ? `${status.tableName} does not exist yet`
-                : missing > 0
-                  ? `${status.tableName} exists - missing ${status.missingColumns!.join(", ")}`
-                  : `${status.tableName} exists`}
+                : pending.length > 0
+                  ? `${status.tableName} exists - to update: ${pending.join(", ")}`
+                  : `${status.tableName} exists - up to date`}
           </p>
         </div>
         <button
-          onClick={create}
-          disabled={busy || status === null}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0057BC] text-white disabled:opacity-50"
+          onClick={status === null && checkFailed ? () => { setMessage(null); void check(); } : create}
+          disabled={busy || (status === null && !checkFailed) || upToDate}
+          title={upToDate ? "Nothing to update" : undefined}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0057BC] text-white disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500 disabled:cursor-not-allowed"
         >
           {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-          {status?.exists ? "Top up columns" : "Create table"}
+          {status === null && checkFailed ? "Retry" : status?.exists ? "Update" : "Create table"}
         </button>
       </div>
       {message && <p className="mt-3 text-sm text-[#2D2A28] dark:text-white">{message}</p>}

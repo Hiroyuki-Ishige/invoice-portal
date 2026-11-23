@@ -237,11 +237,13 @@ export async function GET() {
     const token = (await cookies()).get(DATAVERSE_COOKIES.ACCESS_TOKEN)!.value;
 
     const { tables, missing } = await readStatus(token);
+    // A table that is not there has nothing to top up: the button says Create.
+    const missingColumns = Object.values(tables).every((names) => names === null) ? [] : missing;
     return NextResponse.json({
       exists: Object.values(tables).every((names) => names !== null),
       tableName: TABLES.map((t) => t.logicalName).join(", "),
-      // A table that is not there has nothing to top up: the button says Create.
-      missingColumns: Object.values(tables).every((names) => names === null) ? [] : missing,
+      missingColumns,
+      pending: missingColumns,
     });
   } catch (error) {
     console.error("[Setup API] Error checking the invoice tables:", error);

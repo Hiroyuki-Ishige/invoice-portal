@@ -82,10 +82,12 @@ export async function GET() {
     const token = (await cookies()).get(DATAVERSE_COOKIES.ACCESS_TOKEN)!.value;
 
     const names = await readColumnNames(token);
+    const missingColumns = names === null ? [] : missingFrom(names);
     return NextResponse.json({
       exists: names !== null,
       tableName: CUSTOMER_LOGICAL_NAME,
-      missingColumns: names === null ? [] : missingFrom(names),
+      missingColumns,
+      pending: missingColumns,
     });
   } catch (error) {
     console.error("[Setup API] Error checking the customer table:", error);
