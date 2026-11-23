@@ -301,13 +301,13 @@ export default function RolePermissionsPage() {
               <strong>Edit</strong> allows both. The server refuses a change the table does not allow.
             </p>
             <p>
-              This comes <strong>on top of</strong>{" "}the rules already there, never instead: Schedule still asks each
-              person&apos;s budget plan access per site, a ringi is still edited only by the people its route names,
-              Meeting in MD&apos;s meeting check stays Admin only, and Dataverse&apos;s own security roles still apply.
+              This comes <strong>on top of</strong>{" "}the rules already there, never instead: a User still sees only the invoices
+              of the companies registered to them (User Management &gt; Companies), only an Admin or F&amp;A Admin issues or cancels
+              an invoice, and Dataverse&apos;s own security roles still apply.
             </p>
             <p>
-              <strong>None closes a screen, not the data behind it</strong>: lists another screen needs (themes for Items,
-              for example) are still read. Who may read data at all is Dataverse&apos;s security roles.
+              <strong>None closes a screen, not the data behind it</strong>: lists another screen needs (the customers behind
+              the invoices, for example) are still read. Who may read data at all is Dataverse&apos;s security roles.
             </p>
             <p>
               <Lock className="inline w-3.5 h-3.5 -mt-0.5" /> Fixed: Admin is Edit everywhere, and User Management,

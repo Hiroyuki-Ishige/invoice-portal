@@ -35,6 +35,8 @@ Microsoft 365 のユーザー検索で選ぶ (列 `hi_notifyto` / `hi_notifycc`)
 (`lib/notify/invoice-notice.ts`、`NotifyPanel`)。**自動では送らない**: 宛先を見せて、押した人のメールボックスから送る。PDF は任意で添付。
 **ユーザーのテーブルは Invoice Portal 専用** `hi_invoiceuserprofile` (`USER_PROFILE_*` 定数。CAPEX の `hi_userprofile` とは別)。
 Ringi preview (試用メンバー)・Budget plan access・IIR-Admin ロールは削除済み (`capexadmin` の値 4 は既存データ用に残る)。
+**請求書の一覧 (2026-11-23)**: Issued の一覧と、下の「Cancelled invoices」の箱 (閉じている。理由・Preview・PDF) に分かれる。Created / Cancelled の日時 (取消日時は更新日時 `modifiedon`)。
+Admin / F&A Admin は一括キャンセル (1 件ずつ既存の取消 API)。Review の表の Preview (発行前は番号が `XXX` の見本)。発行後は Issue ボタンが無効。
 **パスワード付き Excel (2026-11-23)**: 「開くパスワード」付きの .xlsx/.xlsm は、アップロード時にパスワードを聞き、**ブラウザ内だけ**で復号して読む
 (`lib/invoice/office-crypto.ts` = MS-OFFCRYPTO Agile、`components/invoices/WorkbookPassword.tsx`。パスワードは送信・保存しない)。旧形式 (Excel 2007 以前) は非対応。
 **User の見える範囲 (2026-11-23)**: Admin / F&A Admin は全社の請求書、**User は割り当てられた会社だけ** (`lib/auth/invoice-scope.ts`、

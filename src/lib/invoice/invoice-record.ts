@@ -134,6 +134,12 @@ export interface SavedInvoice {
   cancelReason: string;
   createdBy: string;
   createdOn: string;
+  /**
+   * When the record last changed. Only a cancellation changes an issued invoice (nothing else writes
+   * it), so on a cancelled invoice this is when it was cancelled - to the minute, which
+   * `hi_cancelledon` (a date) cannot say.
+   */
+  modifiedOn: string;
 }
 
 export function mapDataverseToInvoice(record: Record<string, unknown>): SavedInvoice {
@@ -161,6 +167,7 @@ export function mapDataverseToInvoice(record: Record<string, unknown>): SavedInv
     cancelReason: text(INVOICE_FIELDS.cancelReason),
     createdBy: text("_createdby_value@OData.Community.Display.V1.FormattedValue"),
     createdOn: text("createdon"),
+    modifiedOn: text("modifiedon"),
   };
 }
 

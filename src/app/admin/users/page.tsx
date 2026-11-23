@@ -66,7 +66,7 @@ interface InviteForm {
 
 const EMPTY_FORM: InviteForm = { email: "", displayName: "", jobTitle: "", role: "user", companies: [] };
 
-/** Nobody invited here has any CAPEX entity access to start with; the column is kept empty. */
+/** An Admin or F&A Admin sees every company, so nothing is stored for them (a User's companies are ticked in the form). */
 const NO_ENTITY_ACCESS: EntityAccess = {};
 
 /**
@@ -465,7 +465,7 @@ export default function AdminUsersPage() {
       // which is the only address a sign-in can re-create a profile under.
       setNotice(
         data.willBeRecreatedOnNextSignIn
-          ? `${userToDelete.email} is the address Dataverse holds for a super admin's account, so this profile will be created again the next time that account signs in. Its entity access has been cleared.`
+          ? `${userToDelete.email} is the address Dataverse holds for a super admin's account, so this profile will be created again the next time that account signs in. Its company access has been cleared.`
           : null
       );
       setUserToDelete(null);
@@ -906,8 +906,8 @@ export default function AdminUsersPage() {
           recordSubtitle={userToDelete.email}
           warning={
             isSuperAdmin(userToDelete.email)
-              ? "This address is on the super-admin list. If it is the address Dataverse holds for that account, a fresh profile is created the next time it signs in - with no entity access. If it is that person's second address - a sign-in ID beside their mailbox address - it will not come back. Either way, deleting clears a duplicate rather than revoking access; for that, use Deactivate."
-              : "The profile and its entity access are removed. Ringis and routes that name this person keep their own copy of the name and address, so nothing already circulated changes. To revoke access without losing the record, use Deactivate instead."
+              ? "This address is on the super-admin list. If it is the address Dataverse holds for that account, a fresh profile is created the next time it signs in - with no companies. If it is that person's second address - a sign-in ID beside their mailbox address - it will not come back. Either way, deleting clears a duplicate rather than revoking access; for that, use Deactivate."
+              : "The profile and its company access are removed. Invoices and mails already issued are not changed. To revoke access without losing the record, use Deactivate instead."
           }
           isDeleting={isDeleting}
           onCancel={() => setUserToDelete(null)}
