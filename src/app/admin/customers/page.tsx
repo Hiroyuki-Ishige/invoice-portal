@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { ArrowLeft, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { LoadingBlock } from "@/components/ui/Loading";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { AdminScreenGate, useAdminAccess } from "@/components/admin/AdminScreenGate";
@@ -295,7 +296,7 @@ export default function AdminCustomersPage() {
 
           <GlassCard className="p-4 md:p-6">
             {isLoading ? (
-              <p className="text-sm text-slate-500">Loading...</p>
+              <LoadingBlock text="Loading customers..." size={32} className="py-6" />
             ) : error ? (
               <div className="space-y-2">
                 <p role="alert" className="text-sm text-red-600 dark:text-red-400">
