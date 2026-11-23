@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR, { mutate } from "swr";
-import { Download, Loader2 } from "lucide-react";
+import { Download, FileSearch, Loader2 } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
@@ -19,7 +19,7 @@ import type { SavedInvoice } from "@/lib/invoice/invoice-record";
 import { formatAmount } from "@/lib/utils/format";
 import { ClaimSheetError, parseClaimSheet, type ParsedClaim } from "@/lib/invoice/claim-sheet";
 import { formatMonthLabel, lastDayOfMonth, parseDateInput, toDateInput } from "@/lib/invoice/dates";
-import { renderPdf } from "@/lib/invoice/render-pdf";
+import { openPdfInTab, renderDraftPdf, renderPdf } from "@/lib/invoice/render-pdf";
 import type { DocumentTitle } from "@/lib/invoice/build-pdf";
 
 const TITLES: DocumentTitle[] = ["INVOICE", "DEBIT NOTE"];
@@ -144,6 +144,32 @@ export default function Page() {
     }
   }
 
+  /** Preview one row: the issued document once there is one, otherwise a draft (no number taken). */
+  async function preview({ line, customer }: { line: { claimTo: string; amount: number }; customer?: Customer }) {
+    if (!claim || !date || !customer) return;
+    setError("");
+    const issued = built[line.claimTo.toLowerCase()];
+    if (issued) {
+      // Already issued: show that document, with its number, not a draft.
+      window.open(issued.url, "_blank");
+      return;
+    }
+    try {
+      await openPdfInTab(() =>
+        renderDraftPdf({
+          title: titleOf({ line, customer }),
+          invoiceDate: date,
+          monthLabel: formatMonthLabel(claim.claimMonth),
+          customer,
+          description: DESCRIPTION,
+          amount: line.amount,
+        })
+      );
+    } catch {
+      setError("The preview could not be made.");
+    }
+  }
+
   // Numbers are taken when the invoice is issued, never before.
   const numberOf = (code: string): string => numbers[code.toLowerCase()] ?? "";
 
@@ -258,7 +284,19 @@ export default function Page() {
                           <td className="py-2 pr-3 tabular-nums text-slate-600 dark:text-slate-300">
                             {numberOf(line.claimTo)}
                           </td>
-                          <td className="py-2">
+                          <td className="py-2 whitespace-nowrap">
+                            {customer && (
+                              <button
+                                type="button"
+                                onClick={() => preview({ line, customer })}
+                                disabled={!date}
+                                title={numberOf(line.claimTo) ? "Open the issued invoice" : "Preview - no number is taken until it is issued"}
+                                className="inline-flex items-center gap-1 mr-3 text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-40"
+                              >
+                                <FileSearch className="w-4 h-4" />
+                                Preview
+                              </button>
+                            )}
                             {built[line.claimTo.toLowerCase()] && (
                               <a
                                 href={built[line.claimTo.toLowerCase()].url}

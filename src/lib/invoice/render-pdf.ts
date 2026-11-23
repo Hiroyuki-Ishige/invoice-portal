@@ -1,5 +1,7 @@
-import { formatInvoiceDate } from "./dates";
+import { fiscalYearOf, formatInvoiceDate, type YearMonthDay } from "./dates";
+import type { Customer } from "./customer-record";
 import type { SavedInvoice } from "./invoice-record";
+import type { DocumentTitle } from "./build-pdf";
 
 /** The PDF of a saved invoice - the saved data is the record, the file is made from it. */
 export async function renderPdf(invoice: SavedInvoice, description: string): Promise<Blob> {
@@ -31,4 +33,54 @@ export function saveBlob(blob: Blob, fileName: string) {
   a.download = fileName;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * **A preview of an invoice that has not been issued** - the same document, with `XXX` where the number
+ * will be. Nothing is saved and no number is taken: a number is assigned only when the invoice is
+ * issued, and a cancelled one is never reused, so looking must not cost one.
+ */
+export async function renderDraftPdf(draft: {
+  title: DocumentTitle;
+  invoiceDate: YearMonthDay;
+  monthLabel: string;
+  customer: Customer;
+  description: string;
+  amount: number;
+}): Promise<Blob> {
+  const { buildInvoicePdf } = await import("@/lib/invoice/build-pdf");
+  const logoPng = new Uint8Array(await (await fetch("/hoya-logo.png")).arrayBuffer());
+  const bytes = await buildInvoicePdf({
+    title: draft.title,
+    invoiceNumber: `HYM1AC${fiscalYearOf(draft.invoiceDate)}-XXX`,
+    invoiceDate: formatInvoiceDate(draft.invoiceDate),
+    customer: {
+      name: draft.customer.name,
+      addressLines: draft.customer.addressLines,
+      tradingPartnerId: draft.customer.tradingPartnerId,
+    },
+    paymentTerms: draft.customer.paymentTerms,
+    description: draft.description,
+    monthLabel: draft.monthLabel,
+    amount: draft.amount,
+    logoPng,
+  });
+  return new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
+}
+
+/**
+ * Show a PDF in a new tab. **The tab is opened first, inside the click**, or the browser's pop-up
+ * blocker refuses it once the PDF has been made; it is closed again if making the PDF fails.
+ */
+export async function openPdfInTab(make: () => Promise<Blob>): Promise<void> {
+  const tab = window.open("", "_blank");
+  try {
+    const url = URL.createObjectURL(await make());
+    if (tab) tab.location.href = url;
+    else window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    tab?.close();
+    throw error;
+  }
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR, { mutate } from "swr";
-import { Download, Loader2 } from "lucide-react";
+import { Download, FileSearch, Loader2 } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
@@ -17,10 +17,10 @@ import { FIELD, customersFetcher, type Built } from "@/components/invoices/share
 import type { Customer } from "@/lib/invoice/customer-record";
 import type { SavedInvoice } from "@/lib/invoice/invoice-record";
 import { formatAmount } from "@/lib/utils/format";
-import { PATENT_RD_KINDS, PATENT_SHEET_NAME, RD_SHEET_NAME, parsePatentRdWorkbook, type ParsedPatentRd } from "@/lib/invoice/patent-sheet";
+import { PATENT_RD_KINDS, PATENT_SHEET_NAME, RD_SHEET_NAME, parsePatentRdWorkbook, type ParsedPatentRd, type PatentRdLine } from "@/lib/invoice/patent-sheet";
 import { SheetReadError } from "@/lib/invoice/xlsx-sheet";
 import { formatMonthLabel, lastDayOfMonth, parseDateInput, toDateInput } from "@/lib/invoice/dates";
-import { renderPdf } from "@/lib/invoice/render-pdf";
+import { openPdfInTab, renderDraftPdf, renderPdf } from "@/lib/invoice/render-pdf";
 import type { DocumentTitle } from "@/lib/invoice/build-pdf";
 
 const TITLES: DocumentTitle[] = ["INVOICE", "DEBIT NOTE"];
@@ -95,6 +95,32 @@ export default function Page() {
   const canBuild = !!claim && !!date && creatable.length > 0 && !building;
   const sum = claim ? claim.lines.reduce((a, l) => a + l.amount, 0) : 0;
   const mismatches = (claim?.checks ?? []).filter((c) => c.sum !== c.sheetTotal);
+
+  /** Preview one row: the issued document once there is one, otherwise a draft (no number taken). */
+  async function preview({ line, index, customer }: { line: PatentRdLine; index: number; customer?: Customer }) {
+    if (!claim || !date || !customer) return;
+    setError("");
+    const issued = built[index];
+    if (issued) {
+      // Already issued: show that document, with its number, not a draft.
+      window.open(issued.url, "_blank");
+      return;
+    }
+    try {
+      await openPdfInTab(() =>
+        renderDraftPdf({
+          title: titleOf({ index, customer }),
+          invoiceDate: date,
+          monthLabel: formatMonthLabel(claim.claimMonth),
+          customer,
+          description: line.description,
+          amount: line.amount,
+        })
+      );
+    } catch {
+      setError("The preview could not be made.");
+    }
+  }
 
   async function build() {
     if (!claim || !date) return;
@@ -270,7 +296,19 @@ export default function Page() {
                               )}
                             </td>
                             <td className="py-2 pr-3 tabular-nums text-slate-600 dark:text-slate-300">{numbers[index] ?? ""}</td>
-                            <td className="py-2">
+                            <td className="py-2 whitespace-nowrap">
+                              {customer && (
+                                <button
+                                  type="button"
+                                  onClick={() => preview({ line, index, customer })}
+                                  disabled={!date}
+                                  title={numbers[index] ? "Open the issued invoice" : "Preview - no number is taken until it is issued"}
+                                  className="inline-flex items-center gap-1 mr-3 text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-40"
+                                >
+                                  <FileSearch className="w-4 h-4" />
+                                  Preview
+                                </button>
+                              )}
                               {built[index] && (
                                 <a
                                   href={built[index].url}
