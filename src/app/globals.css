@@ -334,8 +334,63 @@ body {
   animation-delay: 1.5s;
 }
 
+/*
+ * The busy glyph: seven rounded diamonds (2 / 3 / 2) on a ring of seven places.
+ * Each in turn slides into the next place round the ring (`--dx` / `--dy` is
+ * that step), the one ahead having just left it. After the last has moved, every
+ * place is occupied again by an identical diamond, so the loop's reset to 0 is
+ * invisible. One keyframe per diamond because its turn is a percentage, and a
+ * percentage cannot be a variable. The slide is on an outer <g>; the 45-degree
+ * rotation is on an inner one, so the two transforms never fight.
+ */
+@keyframes busyHop0 {
+  0%, 62% { transform: translate(0, 0); }
+  74%, 100% { transform: translate(var(--dx), var(--dy)); }
+}
+@keyframes busyHop1 {
+  0%, 52% { transform: translate(0, 0); }
+  64%, 100% { transform: translate(var(--dx), var(--dy)); }
+}
+@keyframes busyHop2 {
+  0%, 42% { transform: translate(0, 0); }
+  54%, 100% { transform: translate(var(--dx), var(--dy)); }
+}
+@keyframes busyHop3 {
+  0%, 32% { transform: translate(0, 0); }
+  44%, 100% { transform: translate(var(--dx), var(--dy)); }
+}
+@keyframes busyHop4 {
+  0%, 22% { transform: translate(0, 0); }
+  34%, 100% { transform: translate(var(--dx), var(--dy)); }
+}
+@keyframes busyHop5 {
+  0%, 12% { transform: translate(0, 0); }
+  24%, 100% { transform: translate(var(--dx), var(--dy)); }
+}
+@keyframes busyHop6 {
+  0%, 2% { transform: translate(0, 0); }
+  14%, 100% { transform: translate(var(--dx), var(--dy)); }
+}
+
+.busy-diamond {
+  animation-duration: 2.5s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.busy-hop-0 { animation-name: busyHop0; }
+.busy-hop-1 { animation-name: busyHop1; }
+.busy-hop-2 { animation-name: busyHop2; }
+.busy-hop-3 { animation-name: busyHop3; }
+.busy-hop-4 { animation-name: busyHop4; }
+.busy-hop-5 { animation-name: busyHop5; }
+.busy-hop-6 { animation-name: busyHop6; }
+
 /* Somebody who has asked the OS for less motion gets none of it. */
 @media (prefers-reduced-motion: reduce) {
+  .busy-diamond {
+    animation: none;
+  }
+
   .animate-hero-travel,
   .animate-hero-travel-delayed {
     animation: none;

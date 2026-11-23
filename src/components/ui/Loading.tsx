@@ -62,13 +62,46 @@ export const LOADING_TEXT = "Loading data...";
  */
 export function BusyRing({ size = 40 }: { size?: number }) {
   return (
-    <span
+    <svg
       aria-hidden
-      className="inline-block rounded-full animate-spin border-[#0057BC]/20 dark:border-[#00A3DE]/20 border-t-[#0057BC] dark:border-t-[#00A3DE]"
-      style={{ width: size, height: size, borderWidth: Math.max(2, Math.round(size / 14)) }}
-    />
+      viewBox="-95 -65 190 135"
+      width={size}
+      height={Math.round((size * 135) / 190)}
+      className="inline-block shrink-0 text-[#0057BC] dark:text-[#00A3DE]"
+    >
+      {BUSY_DIAMONDS.map(([x, y], i) => {
+        // Each diamond's step is to the next place round the ring (the last wraps to the first).
+        const [nx, ny] = BUSY_DIAMONDS[(i + 1) % BUSY_DIAMONDS.length];
+        return (
+          <g
+            key={i}
+            className={`busy-diamond busy-hop-${i}`}
+            style={{ "--dx": `${nx - x}px`, "--dy": `${ny - y}px` } as React.CSSProperties}
+          >
+            <g transform={`translate(${x} ${y}) rotate(45)`}>
+              <rect x={-16} y={-16} width={32} height={32} rx={7} fill="currentColor" />
+            </g>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
+
+/**
+ * The seven places, in ring order: top-left, top-right, right, bottom-right,
+ * bottom-left, left, centre. A diamond's turn comes in the reverse of this order
+ * (see `busyHop0-6` in `globals.css`), so each steps into a place already vacated.
+ */
+const BUSY_DIAMONDS: ReadonlyArray<readonly [number, number]> = [
+  [-35, -38],
+  [35, -38],
+  [69, -2],
+  [28, 39],
+  [-27, 41],
+  [-69, -1],
+  [0, -3],
+];
 
 /**
  * The ring and a sentence, centred, with nothing round them.
