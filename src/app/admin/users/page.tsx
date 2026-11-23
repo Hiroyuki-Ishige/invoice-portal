@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -28,9 +29,12 @@ import { UserSearchSelect, type Office365User } from "@/components/ui/UserSearch
 import { useAuth } from "@/components/providers/AuthProvider";
 import { RoleBadge } from "@/components/ui/RoleBadge";
 import { InvitePreviewModal, type InvitePreviewInput } from "@/components/admin/InvitePreviewModal";
+import { CompaniesDialog, CompanyPicker, accessFromCodes, codesFromAccess } from "@/components/admin/CompanyAccess";
+import { customersFetcher } from "@/components/invoices/shared";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { BusyRing, LoadingBlock } from "@/components/ui/Loading";
 import {
+  countGrantedEntities,
   ROLE_HINTS,
   ROLE_LABELS,
   USER_ROLES,
@@ -56,9 +60,11 @@ interface InviteForm {
   /** From the directory at pick time, stored so it survives a reload. */
   jobTitle: string;
   role: UserRole;
+  /** For a User: the customer codes whose invoices they may see. Admin and F&A Admin see every company. */
+  companies: string[];
 }
 
-const EMPTY_FORM: InviteForm = { email: "", displayName: "", jobTitle: "", role: "user" };
+const EMPTY_FORM: InviteForm = { email: "", displayName: "", jobTitle: "", role: "user", companies: [] };
 
 /** Nobody invited here has any CAPEX entity access to start with; the column is kept empty. */
 const NO_ENTITY_ACCESS: EntityAccess = {};
@@ -162,6 +168,13 @@ export default function AdminUsersPage() {
   const [sent, setSent] = useState<string | null>(null);
   /** The invitation mail being previewed (nothing is sent), if the dialog is open. */
   const [preview, setPreview] = useState<InvitePreviewInput | null>(null);
+  /** The user whose companies are being edited, if the dialog is open. */
+  const [companiesFor, setCompaniesFor] = useState<UserProfile | null>(null);
+  const { data: customerData, error: customerError, isLoading: customersLoading } = useSWR(
+    isAdmin ? "/api/customers" : null,
+    customersFetcher,
+    { revalidateOnFocus: false }
+  );
 
   /**
    * The `dv_*` cookies are written when AuthProvider initialises, while MSAL
@@ -335,7 +348,14 @@ export default function AdminUsersPage() {
       const response = await withFreshSession("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, entityAccess: NO_ENTITY_ACCESS }),
+        body: JSON.stringify({
+          email: formData.email,
+          displayName: formData.displayName,
+          jobTitle: formData.jobTitle,
+          role: formData.role,
+          // The companies a User may see; Admin and F&A Admin see all, so nothing is stored for them.
+          entityAccess: formData.role === "user" ? accessFromCodes(formData.companies) : NO_ENTITY_ACCESS,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to create user");
@@ -359,6 +379,24 @@ export default function AdminUsersPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  /**
+   * Save the companies a User may see (their `hi_entityaccess` map), and re-read the list.
+   * **Throws on failure**, so the dialog stays open with what was ticked and shows the reason.
+   */
+  const handleSaveCompanies = async (codes: string[]) => {
+    if (!companiesFor) return;
+    const response = await withFreshSession(`/api/admin/users/${companiesFor.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entityAccess: accessFromCodes(codes) }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Failed to save the companies");
+    if (data.warning) setNotice(data.warning);
+    setCompaniesFor(null);
+    await fetchUsers();
   };
 
   /** A role chosen on a row: saved at once, and the list re-read so it shows what is stored. */
@@ -605,6 +643,22 @@ export default function AdminUsersPage() {
               </div>
             </fieldset>
 
+            {formData.role === "user" && (
+              <div className="mt-6">
+                <p className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1">Companies this user may see</p>
+                <p className="mb-2 text-sm text-slate-500 dark:text-slate-400">
+                  A User sees only the invoices of the companies ticked here. With none ticked they see no invoice. Admin and F&amp;A Admin see every company.
+                </p>
+                <CompanyPicker
+                  customers={customerData?.customers}
+                  loading={customersLoading}
+                  error={customerError?.message}
+                  value={formData.companies}
+                  onChange={(companies) => setFormData((form) => ({ ...form, companies }))}
+                />
+              </div>
+            )}
+
             <div className="mt-6 flex flex-wrap justify-end gap-3">
               <button
                 type="button"
@@ -754,6 +808,17 @@ export default function AdminUsersPage() {
 
                       {/* Actions */}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 md:justify-end">
+                        {user.role === "user" && (
+                          <button
+                            type="button"
+                            onClick={() => setCompaniesFor(user)}
+                            disabled={!customerData}
+                            title="The companies whose invoices this user may see"
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-40 disabled:no-underline"
+                          >
+                            Companies ({countGrantedEntities(user.entityAccess)})
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setPreview(previewOf(user.displayName, user.email, user.role))}
@@ -813,6 +878,18 @@ export default function AdminUsersPage() {
         </div>
       </main>
 
+      {companiesFor && customerData && (
+        <CompaniesDialog
+          key={companiesFor.id}
+          name={companiesFor.displayName || companiesFor.email}
+          customers={customerData?.customers}
+          loading={customersLoading}
+          error={customerError?.message}
+          initial={codesFromAccess(companiesFor.entityAccess, customerData?.customers ?? [])}
+          onSave={handleSaveCompanies}
+          onClose={() => setCompaniesFor(null)}
+        />
+      )}
       {preview && <InvitePreviewModal input={preview} onClose={() => setPreview(null)} />}
 
       {/* The app's one delete dialog - the record's name has to be typed.

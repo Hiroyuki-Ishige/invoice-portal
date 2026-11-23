@@ -10,7 +10,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DATAVERSE_COOKIES } from "@/lib/providers/dataverse/middleware";
 import { queryDataverseAll } from "@/lib/providers/dataverse/client";
-import { areaDeniedResponse, checkArea } from "@/lib/auth/require-signed-in";
+import { areaDeniedResponse, checkArea, deniedResponse } from "@/lib/auth/require-signed-in";
+import { invoiceScopeOfCaller, scopeAllows } from "@/lib/auth/invoice-scope";
 import { CUSTOMER_ENTITY_SET, CUSTOMER_FIELDS, mapDataverseToCustomer } from "@/lib/invoice/customer-record";
 import { handleApiError } from "@/lib/utils/api-helpers";
 
@@ -23,7 +24,10 @@ export async function GET() {
     const records = await queryDataverseAll<Record<string, unknown>>(token, CUSTOMER_ENTITY_SET, {
       orderby: `${CUSTOMER_FIELDS.code} asc`,
     });
-    const customers = records.map(mapDataverseToCustomer);
+    // A User sees only the companies registered to them (`invoice-scope.ts`).
+    const scope = await invoiceScopeOfCaller();
+    if (!scope) return deniedResponse("not_permitted");
+    const customers = records.map(mapDataverseToCustomer).filter((c) => scopeAllows(scope, c.code));
     return NextResponse.json({ customers, count: customers.length });
   } catch (error) {
     return handleApiError(error, "Customers API GET");

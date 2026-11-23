@@ -29,7 +29,25 @@ export interface InvoiceNoticeInput {
   attached: boolean;
   /** Who is sending - the person who issued. */
   senderName: string;
+  /** `window.location.origin` - the link has to point at the deployment in use. */
+  origin: string;
 }
+
+/**
+ * **The notice is still being tested** (2026-11-23): while this is true the subject starts with `[TEST]` and a
+ * banner heads the message, so nobody at a site mistakes it for a real notice. Switch it off here, once, when
+ * the mail goes live.
+ */
+export const NOTICE_TEST_MODE = true;
+
+const TEST_BANNER_HTML = `
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 16px">
+    <tr>
+      <td style="padding:12px 16px;background:#fff8e6;border:2px solid #f59e0b;border-radius:8px;font-size:15px;font-weight:700;color:${WARM_BLACK}">
+        TEST &mdash; this is a test message from Invoice Portal, not a real invoice notice. Please ignore it.
+      </td>
+    </tr>
+  </table>`;
 
 const TD = `padding:8px 10px;border-bottom:1px solid #e3e8ee;font-size:13px;color:${WARM_BLACK}`;
 
@@ -39,12 +57,16 @@ export function buildInvoiceNotice(input: InvoiceNoticeInput): { subject: string
   const total = input.invoices.reduce((sum, line) => sum + line.amount, 0);
   const numbers = input.invoices.map((line) => line.number);
 
-  const subject =
+  const baseSubject =
     numbers.length <= 3
       ? `Invoice issued: ${numbers.join(", ")} (${input.monthLabel})`
       : `${numbers.length} invoices issued (${input.monthLabel})`;
+  const subject = NOTICE_TEST_MODE ? `[TEST] ${baseSubject}` : baseSubject;
 
   const many = input.invoices.length > 1;
+  // The scheme is checked, then the URL escaped - see `invite-mail.ts`. The path is a literal.
+  const origin = /^https?:\/\//i.test(input.origin) ? input.origin : "";
+  const portalLink = escapeHtml(`${origin}/invoices`);
   const rows = input.invoices
     .map(
       (line) => `
@@ -66,12 +88,16 @@ export function buildInvoiceNotice(input: InvoiceNoticeInput): { subject: string
     </table>`;
 
   const html = renderMailShell({
-    eyebrow: many ? "Invoices issued" : "Invoice issued",
-    bodyHtml: `
+    eyebrow: `${NOTICE_TEST_MODE ? "TEST - " : ""}${many ? "Invoices issued" : "Invoice issued"}`,
+    bodyHtml: `${NOTICE_TEST_MODE ? TEST_BANNER_HTML : ""}
       <p style="margin:0 0 12px">Dear ${escapeHtml(input.customerName)} Accounting team,</p>
       <p style="margin:0">
         HOYA CORPORATION MD Section Accounting has issued ${many ? "the following invoices" : "the following invoice"}
         to ${escapeHtml(input.customerName)}${input.attached ? `. The PDF${many ? "s are" : " is"} attached.` : "."}
+      </p>
+      <p style="margin:12px 0 0">
+        You can also see ${many ? "these invoices" : "this invoice"} in Invoice Portal: sign in with your Microsoft 365 account.
+        You will see only the invoices of the companies registered to you.
       </p>`,
     facts: [
       { label: "Invoice date", value: date },
@@ -79,7 +105,9 @@ export function buildInvoiceNotice(input: InvoiceNoticeInput): { subject: string
       { label: "Total", value: `¥${formatAmount(total, 0)}`, strong: true },
     ],
     appendixHtml,
-    footnote: `Sent from Invoice Portal by ${input.senderName}. Replying to this message will reach the sender, not the app.`,
+    ctaLabel: "Open Invoice Portal",
+    ctaHref: portalLink,
+    footnote: `Sent from Invoice Portal by ${input.senderName}. If you cannot sign in, ask the sender to register you. Replying to this message will reach the sender, not the app.`,
   });
   return { subject, html };
 }

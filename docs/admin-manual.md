@@ -66,6 +66,18 @@ Dataverse の権限が足りなければ書き込みは 403 で止まる。
 招待メールには、MFA (Microsoft Authenticator) の設定手順への、英語・日本語のリンクが付く。
 ページは `/guide/mfa` (英語) と `/guide/mfa?lang=ja` (日本語)。サインイン前でも開ける。
 
+### User が見られる会社 (請求書の範囲)
+
+**User は、割り当てられた会社の請求書だけを見られる。** Admin と F&A Admin は全社を見られる。
+
+- 登録のとき: ロールで **User** を選ぶと、「Companies this user may see」に会社のチェック一覧が出る。見せる会社に印を付ける。
+- あとから変える: All Users の User の行にある **Companies (N)** を押し、印を付け直して Save。
+- 1 社も選ばない User は、請求書が 1 件も見えない。
+- 完了通知メール (Send mails) には Invoice Portal へのリンクが付く。宛先の人が見られるようにするには、
+  その人を **User として登録し、その会社に印を付けておく** (Mail Notifications の宛先とは別の設定)。
+- これは **アプリが画面と API で行う制限**。Dataverse の `Invoice Portal Reader` ロールは、Dataverse を直接呼べる人には
+  全社の請求書を読める。会社ごとに完全に分けるには、Dataverse 側のビジネスユニットや所有チームでの制限が別に要る。
+
 ### 手順 4: 動作を確かめる
 
 本人にサインインしてもらう (権限が反映されないときは、一度サインアウトして入り直す)。

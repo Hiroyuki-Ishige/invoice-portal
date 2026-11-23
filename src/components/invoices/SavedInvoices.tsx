@@ -197,7 +197,7 @@ export function SavedInvoices() {
           <thead>
             <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
               <th className="py-2 pr-2 w-8">
-                <input
+                {canCancel && <input
                   type="checkbox"
                   aria-label="Select every issued invoice shown"
                   className="w-4 h-4 accent-[#0057BC]"
@@ -213,7 +213,7 @@ export function SavedInvoices() {
                       return next;
                     })
                   }
-                />
+                />}
               </th>
               <th className="py-2 pr-3 font-semibold">Number</th>
               <th className="py-2 pr-3 font-semibold">Title</th>
@@ -230,7 +230,7 @@ export function SavedInvoices() {
             {shown.map((invoice) => (
               <tr key={invoice.id} className="border-b border-slate-100 dark:border-slate-800 align-middle">
                 <td className="py-2 pr-2">
-                  {invoice.status === "issued" && (
+                  {canCancel && invoice.status === "issued" && (
                     <input
                       type="checkbox"
                       aria-label={`Select ${invoice.number}`}

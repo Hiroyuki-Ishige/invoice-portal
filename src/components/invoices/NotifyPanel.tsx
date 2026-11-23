@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, Loader2, Mail } from "lucide-react";
+import { Check, Eye, Loader2, Mail } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { Customer } from "@/lib/invoice/customer-record";
 import type { SavedInvoice } from "@/lib/invoice/invoice-record";
-import { sendInvoiceNotice } from "@/lib/notify/send-mail";
+import { APP_SUBJECT_PREFIX, sendInvoiceNotice } from "@/lib/notify/send-mail";
+import { buildInvoiceNotice, type InvoiceNoticeInput } from "@/lib/notify/invoice-notice";
+import { MailPreviewModal, type MailPreviewProps } from "@/components/ui/MailPreviewModal";
 import type { GraphFileAttachment } from "@/lib/notify/attachments";
 
 /** One invoice just issued, with what the mail needs of it. */
@@ -57,6 +59,8 @@ export function NotifyPanel({
   const { user, getGraphAccessToken } = useAuth();
   const [attach, setAttach] = useState(true);
   const [status, setStatus] = useState<Record<string, Status>>({});
+  /** The mail being previewed (nothing is sent), if the dialog is open. */
+  const [preview, setPreview] = useState<Omit<MailPreviewProps, "onClose"> | null>(null);
 
   const groups = new Map<string, NotifyItem[]>();
   for (const item of items) {
@@ -69,9 +73,40 @@ export function NotifyPanel({
   });
   const sendable = rows.filter((r) => r.to.length > 0 && status[r.key]?.state !== "sent");
 
+  const senderName = user?.userMetadata?.displayName || user?.email || "Invoice Portal";
+
+  /** What one company's mail says - the same for the preview and for the send, so they cannot differ. */
+  function noticeFor(list: NotifyItem[]): Omit<InvoiceNoticeInput, "attached"> {
+    const first = list[0].invoice;
+    return {
+      customerName: first.customerName,
+      invoiceDate: first.invoiceDate,
+      monthLabel: first.monthLabel,
+      senderName,
+      origin: window.location.origin,
+      invoices: list.map(({ invoice, description }) => ({
+        number: invoice.number,
+        title: invoice.title,
+        description,
+        amount: invoice.total,
+      })),
+    };
+  }
+
+  function previewRow(row: (typeof rows)[number]) {
+    const withPdf = row.list.filter((item) => item.fileUrl || item.makePdf);
+    const { subject, html } = buildInvoiceNotice({ ...noticeFor(row.list), attached: attach && withPdf.length > 0 });
+    setPreview({
+      to: row.to.length > 0 ? row.to.join("; ") : `(no recipient is set for ${row.customer?.code ?? "this company"} - no mail would be sent)`,
+      cc: row.cc.join("; "),
+      subject: `${APP_SUBJECT_PREFIX} ${subject}`,
+      attachments: attach ? withPdf.map((item) => item.fileName ?? `${item.invoice.number}.pdf`) : [],
+      html,
+    });
+  }
+
   async function sendAll() {
     const token = await getGraphAccessToken();
-    const senderName = user?.userMetadata?.displayName || user?.email || "Invoice Portal";
     for (const row of sendable) {
       setStatus((s) => ({ ...s, [row.key]: { state: "sending" } }));
       try {
@@ -88,20 +123,8 @@ export function NotifyPanel({
             });
           }
         }
-        const first = row.list[0].invoice;
         const outcome = await sendInvoiceNotice(
-          {
-            customerName: first.customerName,
-            invoiceDate: first.invoiceDate,
-            monthLabel: first.monthLabel,
-            senderName,
-            invoices: row.list.map(({ invoice, description }) => ({
-              number: invoice.number,
-              title: invoice.title,
-              description,
-              amount: invoice.total,
-            })),
-          },
+          noticeFor(row.list),
           row.to,
           row.cc,
           pdfs,
@@ -152,6 +175,14 @@ export function NotifyPanel({
                   {row.list[0].invoice.customerName}{" "}
                   <span className="font-normal text-slate-500 dark:text-slate-400">({row.list.map((i) => i.invoice.number).join(", ")})</span>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => previewRow(row)}
+                  className="inline-flex items-center gap-1 text-[#0057BC] dark:text-[#00A3DE] hover:underline"
+                >
+                  <Eye className="w-4 h-4" aria-hidden="true" />
+                  Preview mail
+                </button>
                 {st.state === "sending" && (
                   <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
                     <Loader2 className="w-4 h-4 animate-spin" /> Sending...
@@ -203,6 +234,7 @@ export function NotifyPanel({
           Attach the PDFs
         </label>
       </div>
+      {preview && <MailPreviewModal {...preview} onClose={() => setPreview(null)} />}
     </GlassCard>
   );
 }

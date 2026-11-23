@@ -37,6 +37,9 @@ Microsoft 365 のユーザー検索で選ぶ (列 `hi_notifyto` / `hi_notifycc`)
 Ringi preview (試用メンバー)・Budget plan access・IIR-Admin ロールは削除済み (`capexadmin` の値 4 は既存データ用に残る)。
 **パスワード付き Excel (2026-11-23)**: 「開くパスワード」付きの .xlsx/.xlsm は、アップロード時にパスワードを聞き、**ブラウザ内だけ**で復号して読む
 (`lib/invoice/office-crypto.ts` = MS-OFFCRYPTO Agile、`components/invoices/WorkbookPassword.tsx`。パスワードは送信・保存しない)。旧形式 (Excel 2007 以前) は非対応。
+**User の見える範囲 (2026-11-23)**: Admin / F&A Admin は全社の請求書、**User は割り当てられた会社だけ** (`lib/auth/invoice-scope.ts`、
+割り当ては User Management の Companies = プロフィールの `hi_entityaccess` に顧客コードを入れる。`/api/invoices` `/api/invoices/[id]` `/api/customers` が絞る)。
+アプリの制限であって Dataverse のレコード単位の制限ではない。完了通知メールは `NOTICE_TEST_MODE` の間 `[TEST]` が付き、Invoice Portal へのリンクを含む。
 **未実装**: PDF ファイル自体の保存 (データから毎回作る)、Draft 状態の使用。
 
 ## Tech Stack
