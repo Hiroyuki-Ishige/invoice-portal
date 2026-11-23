@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { Ban, Download, FileSearch, Loader2, Mail } from "lucide-react";
+import { Archive, Ban, ChevronDown, Download, FileSearch, Loader2, Mail } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { mayCancelInvoices } from "@/lib/types/user-profile";
@@ -28,20 +28,22 @@ async function invoicesFetcher(url: string): Promise<InvoiceListResponse> {
   return data;
 }
 
-type StatusFilter = "" | "issued" | "cancelled";
+/** The two lists, read apart so neither can crowd the other out of the newest-N cap. */
+const ISSUED_KEY = "/api/invoices?status=issued";
+const CANCELLED_KEY = "/api/invoices?status=cancelled";
 
-/** Every saved invoice: find it, download its PDF again, cancel it. */
+/** Saved invoices: find one, download its PDF again, cancel it. Cancelled ones are put away in their own box below. */
 export function SavedInvoices() {
   const { role, user } = useAuth();
   const canCancel = mayCancelInvoices(role, user?.email);
-  const [status, setStatus] = useState<StatusFilter>("");
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [cancelling, setCancelling] = useState<SavedInvoice | null>(null);
   const [reason, setReason] = useState("");
-  const key = `/api/invoices?status=${status}`;
-  const { data, error, isLoading } = useSWR(key, invoicesFetcher, { revalidateOnFocus: false });
+  const [showCancelled, setShowCancelled] = useState(false);
+  const { data, error, isLoading } = useSWR(ISSUED_KEY, invoicesFetcher, { revalidateOnFocus: false });
+  const { data: cancelledData, error: cancelledError } = useSWR(CANCELLED_KEY, invoicesFetcher, { revalidateOnFocus: false });
   const { data: customerData } = useSWR("/api/customers", customersFetcher, { revalidateOnFocus: false });
   /** Invoices ticked for a completion notice, and what the notice panel was prepared with. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -49,9 +51,10 @@ export function SavedInvoices() {
   const [notifyItems, setNotifyItems] = useState<NotifyItem[] | null>(null);
 
   const needle = query.trim().toLowerCase();
-  const shown = (data?.invoices ?? []).filter(
-    (i) => !needle || i.number.toLowerCase().includes(needle) || i.customerName.toLowerCase().includes(needle) || i.customerCode.toLowerCase().includes(needle)
-  );
+  const matches = (i: SavedInvoice) =>
+    !needle || i.number.toLowerCase().includes(needle) || i.customerName.toLowerCase().includes(needle) || i.customerCode.toLowerCase().includes(needle);
+  const shown = (data?.invoices ?? []).filter(matches);
+  const cancelledShown = (cancelledData?.invoices ?? []).filter(matches);
 
   const notifiable = shown.filter((i) => i.status === "issued");
   const allTicked = notifiable.length > 0 && notifiable.every((i) => selected.has(i.id));
@@ -129,7 +132,8 @@ export function SavedInvoices() {
       if (!response.ok) throw new Error(result.error || "The invoice could not be cancelled.");
       setCancelling(null);
       setReason("");
-      await mutate(key);
+      // It leaves the issued list and joins the cancelled box.
+      await Promise.all([mutate(ISSUED_KEY), mutate(CANCELLED_KEY)]);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "The invoice could not be cancelled.");
     } finally {
@@ -149,11 +153,6 @@ export function SavedInvoices() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <select className={FIELD} aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
-            <option value="">All statuses</option>
-            <option value="issued">{STATUS_LABELS.issued}</option>
-            <option value="cancelled">{STATUS_LABELS.cancelled}</option>
-          </select>
         </div>
       </div>
 
@@ -315,9 +314,98 @@ export function SavedInvoices() {
       )}
       {data?.truncated && (
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Showing the newest {data.limit} invoices. Narrow the status filter to see others.
+          Showing the newest {data.limit} issued invoices. Search by number or customer to find an older one.
         </p>
       )}
+
+      {/* Cancelled invoices, put away: closed until asked for. */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-700">
+        <button
+          type="button"
+          onClick={() => setShowCancelled((open) => !open)}
+          aria-expanded={showCancelled}
+          aria-controls="cancelled-invoices"
+          className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-[#2D2A28] dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors duration-300 ease-in-out rounded-xl"
+        >
+          <Archive className="w-4 h-4 text-slate-500 dark:text-slate-400" aria-hidden="true" />
+          Cancelled invoices
+          <span className="rounded-full border border-[#2D2A28]/40 dark:border-slate-500 px-2 py-0.5 text-xs font-medium text-[#2D2A28] dark:text-slate-300">
+            {cancelledData ? (needle ? `${cancelledShown.length} of ${cancelledData.invoices.length}` : cancelledData.invoices.length) : "..."}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className={`ml-auto w-4 h-4 text-slate-500 dark:text-slate-400 transition-transform duration-300 ease-in-out ${showCancelled ? "rotate-180" : ""}`}
+          />
+        </button>
+        {showCancelled && (
+          <div id="cancelled-invoices" className="px-4 pb-4 animate-[fadeIn_0.3s_ease-in-out]">
+            {cancelledError && (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                {cancelledError.message}
+              </p>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[800px] text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                    <th className="py-2 pr-3 font-semibold">Number</th>
+                    <th className="py-2 pr-3 font-semibold">Title</th>
+                    <th className="py-2 pr-3 font-semibold">Customer</th>
+                    <th className="py-2 pr-3 font-semibold">Date</th>
+                    <th className="py-2 pr-3 font-semibold text-right">Amount (JPY)</th>
+                    <th className="py-2 pr-3 font-semibold">Reason</th>
+                    <th className="py-2 font-semibold">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cancelledShown.map((invoice) => (
+                    <tr key={invoice.id} className="border-b border-slate-100 dark:border-slate-800 align-middle">
+                      <td className="py-2 pr-3 font-medium tabular-nums text-[#2D2A28] dark:text-white">{invoice.number}</td>
+                      <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.title}</td>
+                      <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.customerName}</td>
+                      <td className="py-2 pr-3 tabular-nums text-slate-600 dark:text-slate-300">{invoice.invoiceDate}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">¥{formatAmount(invoice.total, 0)}</td>
+                      <td className="py-2 pr-3 text-slate-600 dark:text-slate-300 max-w-[16rem] break-words">{invoice.cancelReason || "-"}</td>
+                      <td className="py-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => download(invoice, "preview")}
+                          disabled={busyId === invoice.id}
+                          className="inline-flex items-center gap-1 mr-3 text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-50"
+                        >
+                          <FileSearch className="w-4 h-4" />
+                          Preview
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => download(invoice)}
+                          disabled={busyId === invoice.id}
+                          className="inline-flex items-center gap-1 text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-50"
+                        >
+                          {busyId === invoice.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                          PDF
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {cancelledData && cancelledShown.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-slate-500 dark:text-slate-400">
+                        {cancelledData.invoices.length ? "No cancelled invoice matches the search." : "No invoice has been cancelled."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {cancelledData?.truncated && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Showing the newest {cancelledData.limit} cancelled invoices.</p>
+            )}
+          </div>
+        )}
+      </div>
 
       {cancelling && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-[fadeIn_0.3s_ease-in-out] px-3">
