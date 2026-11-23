@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -13,6 +13,8 @@ import {
   Calendar,
   Send,
   Eye,
+  Copy,
+  Check,
   UserPlus,
   ToggleLeft,
   ToggleRight,
@@ -77,6 +79,55 @@ const joinedDate = (iso: string): string =>
   iso
     ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "";
+
+const subscribeNever = () => () => {};
+
+/**
+ * The app's address (its landing page), with a button that copies it - for pasting into a chat or a
+ * mail of your own. Read from the browser, so it is the deployment in use (production in production);
+ * the server snapshot is empty, which keeps the first paint the same on both sides.
+ */
+function CopyAppUrl() {
+  const url = useSyncExternalStore(subscribeNever, () => `${window.location.origin}/`, () => "");
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const copy = async () => {
+    setFailed(false);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused (permissions, an insecure page): say so, and the address
+      // is on screen to select by hand.
+      setFailed(true);
+    }
+  };
+
+  if (!url) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <span className="text-sm font-medium text-slate-500 dark:text-slate-400">App link</span>
+      <code className="min-w-0 break-all rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-3 py-1.5 text-sm text-[#2D2A28] dark:text-white select-all">
+        {url}
+      </code>
+      <button
+        type="button"
+        onClick={copy}
+        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium border border-[#0057BC] text-[#0057BC] dark:border-[#00A3DE] dark:text-[#00A3DE] hover:bg-[#0057BC]/5 dark:hover:bg-[#00A3DE]/10 transition-all duration-300 ease-in-out"
+      >
+        {copied ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+        <span role="status">{copied ? "Copied" : "Copy"}</span>
+      </button>
+      {failed && (
+        <span role="alert" className="text-sm text-red-600 dark:text-red-400">
+          Could not copy - select the address and copy it by hand.
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default function AdminUsersPage() {
   const {
@@ -489,7 +540,10 @@ export default function AdminUsersPage() {
 
           {/* Invite New User */}
           <GlassCard className="p-4 md:p-8 mb-6">
-            <h2 className="text-lg md:text-xl font-semibold text-[#2D2A28] dark:text-white mb-5">Invite New User</h2>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+              <h2 className="text-lg md:text-xl font-semibold text-[#2D2A28] dark:text-white">Invite New User</h2>
+              <CopyAppUrl />
+            </div>
 
             {/* Both boxes search the same directory and fill the same person, so the
                 name, the email and the title can never belong to different people. */}
