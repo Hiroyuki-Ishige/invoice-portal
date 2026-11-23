@@ -27,14 +27,7 @@
 // Relative rather than `@/...`, for the reason `manual-mail.ts` gives: a builder
 // for mail that leaves the tenant should stay runnable from a throwaway script,
 // and the path alias does not resolve outside Next.
-import {
-  ROLE_HINTS,
-  ROLE_LABELS,
-  entityAccessLevel,
-  isSuperAdmin,
-  type EntityAccess,
-  type UserRole,
-} from "../types/user-profile";
+import { ROLE_HINTS, ROLE_LABELS, type UserRole } from "../types/user-profile";
 import { escapeHtml, renderMailShell } from "./mail-shell";
 
 export interface InviteMessageInput {
@@ -43,74 +36,10 @@ export interface InviteMessageInput {
   /** The address the profile was created under - the account they sign in as. */
   email: string;
   role: UserRole;
-  /** What was granted per entity. Read through `entityAccessLevel`, never indexed. */
-  entityAccess: EntityAccess;
   /** The admin sending it. Empty is tolerated - the sentence just drops the name. */
   invitedBy: string;
   /** `window.location.origin` - the link has to point at the deployment in use. */
   origin: string;
-}
-
-/**
- * Entity codes at a given level, in a stable order.
- *
- * `Object.keys` is safe here - own enumerable properties only - but the level is
- * still read through `entityAccessLevel()` rather than indexed, because the map
- * comes back from stored JSON and `access["constructor"]` is truthy on any
- * object literal. Rule 4; it has already cost this repo a day once.
- */
-function entitiesAt(access: EntityAccess | null | undefined, level: "edit" | "view"): string[] {
-  if (!access) return [];
-  return Object.keys(access)
-    .filter((code) => entityAccessLevel(access, code) === level)
-    .sort();
-}
-
-/** What a reader may edit, as `requireEntityWrite()` would decide it. */
-export interface AccessSummary {
-  /** The entity codes this person may change. Empty when `bypasses` is true. */
-  editable: string[];
-  /** They are not narrowed by the per-entity rule at all. */
-  bypasses: boolean;
-  /** `bypasses`, or at least one editable entity. The only test the wording needs. */
-  canEditAnything: boolean;
-}
-
-/**
- * What the reader may actually do, said the way the admin screen says it.
- *
- * **Edit is enforced; View is not.** Reading is open - every signed-in person
- * sees every entity's figures, in the summaries, the PDF and the chatbot - so a
- * mail that listed "View: HOMS" would be describing a restriction that does not
- * exist, and the first report they opened would contradict it. Only the editable
- * entities are named, and the sentence about reading says plainly that it is not
- * narrowed. Saying what a feature does not do is cheaper than being caught not
- * doing it (rule 10).
- *
- * ### Both bypasses, not just the role
- *
- * `requireEntityWrite()` in `lib/auth/entity-access.ts` lets a caller past the
- * per-entity rule on **two** counts, in this order: the address is on
- * `SUPER_ADMIN_EMAILS`, or the role is `admin`. Reading only the second is how
- * this mail came to tell a super admin whose profile happens to say `user` that
- * they may edit nothing, while the server let them edit everything. The list is
- * the shared one in `types/user-profile.ts` - `isSuperAdminEmail()` next to the
- * server's own check reads the same array, and cannot be imported here because
- * its module pulls in `next/headers`.
- */
-export function describeAccess(input: {
-  role: UserRole;
-  entityAccess: EntityAccess;
-  /** The address the profile was created under - a super admin is one by address. */
-  email: string;
-}): AccessSummary {
-  // Listing entities for somebody who bypasses the rule would understate what
-  // they have, so the caller is given the flag instead of a list.
-  if (isSuperAdmin(input.email) || input.role === "admin") {
-    return { editable: [], bypasses: true, canEditAnything: true };
-  }
-  const editable = entitiesAt(input.entityAccess, "edit");
-  return { editable, bypasses: false, canEditAnything: editable.length > 0 };
 }
 
 export const INVITE_SUBJECT = "You have access to Invoice Portal";
@@ -125,12 +54,6 @@ export const INVITE_SUBJECT = "You have access to Invoice Portal";
  */
 export function buildInviteMessage(input: InviteMessageInput): { subject: string; html: string } {
   const firstName = (input.displayName || input.email.split("@")[0]).trim();
-  const { editable, bypasses, canEditAnything } = describeAccess({
-    role: input.role,
-    entityAccess: input.entityAccess,
-    email: input.email,
-  });
-
   const greeting = `Hello ${escapeHtml(firstName)},`;
   const opener = input.invitedBy
     ? `${escapeHtml(input.invitedBy)} has given you access to <strong>Invoice Portal</strong>, ` +
@@ -147,15 +70,10 @@ export function buildInviteMessage(input: InviteMessageInput): { subject: string
   // configured value. There is nothing to encode: the path is a literal.
   const origin = /^https?:\/\//i.test(input.origin) ? input.origin : "";
   const link = escapeHtml(`${origin}/dashboard`);
-
-  // The amber panel, used only when there is something the reader would
-  // otherwise discover by pressing Save and being refused. `canEditAnything`
-  // already folds in every bypass - re-testing the role here would say that
-  // `describeAccess` is not trusted to answer the question it exists for.
-  const notice = canEditAnything
-    ? undefined
-    : "You can read every budget, but you cannot change any entity's figures yet. " +
-      "Ask whoever sent this if you need editing rights.";
+  // The MFA guide is a public page (no sign-in), in both languages - the reader may not be able to
+  // sign in until they have read it.
+  const guideEn = escapeHtml(`${origin}/guide/mfa`);
+  const guideJa = escapeHtml(`${origin}/guide/mfa?lang=ja`);
 
   return {
     subject: INVITE_SUBJECT,
@@ -167,24 +85,38 @@ export function buildInviteMessage(input: InviteMessageInput): { subject: string
         <p style="margin:0">
           Sign in with your usual Microsoft 365 account - there is no separate
           password to set up.
-        </p>`,
+        </p>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+               style="margin:18px 0 0">
+          <tr>
+            <td style="padding:16px 18px;background:#e6eef8;border-left:4px solid #0057BC;
+                       border-radius:0 8px 8px 0;font-size:14px;color:#2D2A28">
+              <div style="font-size:15px;font-weight:700;color:#0057BC;margin:0 0 6px">
+                First time? Set up your second sign-in check (MFA)
+              </div>
+              <div style="margin:0 0 12px">
+                Microsoft asks for a second check with the Microsoft Authenticator app on your
+                phone the first time you sign in. It takes about five minutes. Read the guide
+                with pictures first:
+              </div>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="background:#0057BC;border-radius:6px;padding:9px 18px">
+                    <a href="${guideEn}" style="color:#ffffff;font-weight:700;text-decoration:none">English guide</a>
+                  </td>
+                  <td width="10"></td>
+                  <td style="background:#0057BC;border-radius:6px;padding:9px 18px">
+                    <a href="${guideJa}" style="color:#ffffff;font-weight:700;text-decoration:none">日本語ガイド</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`,
       facts: [
         { label: "Sign in as", value: input.email, strong: true },
         { label: "Role", value: `${ROLE_LABELS[input.role]} - ${ROLE_HINTS[input.role]}` },
-        {
-          label: "May edit",
-          // Three sentences, not two, so `canEditAnything` cannot serve here:
-          // "every entity" and "these two entities" are both true answers to a
-          // question the boolean flattens.
-          value: bypasses
-            ? "Every entity"
-            : editable.length > 0
-              ? editable.join(", ")
-              : "No entities yet",
-        },
-        { label: "May read", value: "Every entity's figures" },
       ],
-      noticeHtml: notice ? escapeHtml(notice) : undefined,
       ctaLabel: "Open Invoice Portal",
       ctaHref: link,
       footnote:

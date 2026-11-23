@@ -21,7 +21,7 @@
  * 2026-09-13 and is now an entry here like any other.
  */
 
-import { Building2, Database, Mail, Users, type LucideIcon } from "lucide-react";
+import { BookOpen, Building2, Database, Mail, Users, type LucideIcon } from "lucide-react";
 import { Grid3x3 } from "lucide-react";
 import { levelFor, type PermissionTable } from "@/lib/auth/permissions";
 import type { UserRole } from "@/lib/types/user-profile";
@@ -47,6 +47,7 @@ export const ADMIN_DESTINATIONS: AdminDestination[] = [
   { label: "Role Permissions", description: "Which role may open and change each screen", href: "/admin/role-permissions", icon: Grid3x3, area: "admin-role-permissions" },
   { label: "Customers", description: "Companies invoices are addressed to", href: "/admin/customers", icon: Building2, area: "admin-customers" },
   { label: "Mail Notifications", description: "Who is told when an invoice is issued", href: "/admin/notifications", icon: Mail, area: "admin-notifications" },
+  { label: "Admin Guide", description: "How to add users and set their access", href: "/admin/guide", icon: BookOpen, area: "admin-guide" },
   { label: "Setup", description: "Create and repair Dataverse tables", href: "/admin/setup", icon: Database, area: "admin-setup" },
 ];
 
