@@ -80,10 +80,17 @@ export async function readSheet(file: ArrayBuffer, sheetName: string, maxRow = 6
     throw new SheetReadError("The Excel file is not in the expected format (workbook.xml not found).");
   }
   let relId: string | null = null;
+  const sheetNames: string[] = [];
   for (const m of workbookXml.matchAll(/<sheet\b[^>]*>/g)) {
-    if (attr(m[0], "name") === sheetName) relId = attr(m[0], "r:id");
+    const name = attr(m[0], "name");
+    if (name) sheetNames.push(name);
+    if (name === sheetName) relId = attr(m[0], "r:id");
   }
-  if (!relId) throw new SheetReadError(`Sheet "${sheetName}" not found.`);
+  if (!relId) {
+    // Most often the wrong file for the screen (the Patent & R&D workbook dropped on Expenses, or the reverse).
+    const have = sheetNames.slice(0, 8).join(", ") + (sheetNames.length > 8 ? ", ..." : "");
+    throw new SheetReadError(`Sheet "${sheetName}" not found. Is this the right file for this tab? The sheets in this file: ${have || "(none)"}.`);
+  }
 
   let target: string | null = null;
   for (const m of relsXml.matchAll(/<Relationship\b[^>]*>/g)) {
