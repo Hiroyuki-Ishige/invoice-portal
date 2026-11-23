@@ -12,6 +12,7 @@ import { ExcelDropZone } from "@/components/invoices/ExcelDropZone";
 import { NotifyPanel, type NotifyItem } from "@/components/invoices/NotifyPanel";
 import { SavedInvoices } from "@/components/invoices/SavedInvoices";
 import { SheetWarnings } from "@/components/invoices/SheetWarnings";
+import { useOpenWorkbook } from "@/components/invoices/WorkbookPassword";
 import { FIELD, customersFetcher, type Built } from "@/components/invoices/shared";
 import type { Customer } from "@/lib/invoice/customer-record";
 import type { SavedInvoice } from "@/lib/invoice/invoice-record";
@@ -34,6 +35,7 @@ const TITLES: DocumentTitle[] = ["INVOICE", "DEBIT NOTE"];
  * keyed by the row, never by the company code.
  */
 export default function Page() {
+  const { openWorkbook, passwordDialog } = useOpenWorkbook();
   const { data: customerData, error: customerError } = useSWR("/api/customers", customersFetcher, {
     revalidateOnFocus: false,
   });
@@ -72,7 +74,7 @@ export default function Page() {
     setFileName(file.name);
     setReading(true);
     try {
-      const parsed = await parsePatentRdWorkbook(await file.arrayBuffer());
+      const parsed = await parsePatentRdWorkbook(await openWorkbook(file));
       setClaim(parsed);
       setDateText(toDateInput(lastDayOfMonth(parsed.claimMonth)));
       setTitles({});
@@ -154,6 +156,7 @@ export default function Page() {
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-[#2D2A28]">
       <Header />
+      {passwordDialog}
       <main className="flex-1 py-6 md:py-8 px-3 md:px-6">
         <div className="max-w-5xl mx-auto space-y-4 md:space-y-6">
           <InvoiceTabs />
