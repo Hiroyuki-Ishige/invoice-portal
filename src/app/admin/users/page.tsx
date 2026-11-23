@@ -1,23 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
   Search,
-  Plus,
   User,
   Shield,
-  ShieldCheck,
-  ShieldPlus,
-  ToggleLeft,
-  ToggleRight,
-  Save,
-  X,
-  RefreshCw,
   AlertCircle,
   Trash2,
   Mail,
+  Calendar,
+  Send,
+  UserPlus,
+  ToggleLeft,
+  ToggleRight,
+  X,
 } from "lucide-react";
 import { sendInvitation } from "@/lib/notify/send-mail";
 import { Header } from "@/components/ui/Header";
@@ -27,7 +25,7 @@ import { UserSearchSelect, type Office365User } from "@/components/ui/UserSearch
 import { useAuth } from "@/components/providers/AuthProvider";
 import { RoleBadge } from "@/components/ui/RoleBadge";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
-import { LoadingBlock } from "@/components/ui/Loading";
+import { BusyRing, LoadingBlock } from "@/components/ui/Loading";
 import {
   ROLE_HINTS,
   ROLE_LABELS,
@@ -41,42 +39,42 @@ import {
 /**
  * Admin User Management Page
  *
- * Allows administrators to:
- * - Register new users and view every profile
- * - Edit user roles (Admin / F&A-Admin / User)
- * - Grant access per CAPEX entity (None / View / Edit)
- * - Activate/deactivate users
+ * One column, two cards (redesigned 2026-11-23): **Invite New User** and **All Users**.
+ * Administrators can:
+ * - Invite a person picked from Office 365 with one of three roles (Admin / F&A Admin / User)
+ * - Change a role in place, from the chip on the row
+ * - Re-send the app link, deactivate or delete a profile
  */
 
-interface UserFormData {
+interface InviteForm {
   email: string;
   displayName: string;
   /** From the directory at pick time, stored so it survives a reload. */
   jobTitle: string;
   role: UserRole;
-  /** Per entity code. An entity that is absent means no access. */
-  entityAccess: EntityAccess;
 }
 
-const EMPTY_FORM: UserFormData = {
-  email: "",
-  displayName: "",
-  jobTitle: "",
-  role: "user",
-  entityAccess: {},
-};
+const EMPTY_FORM: InviteForm = { email: "", displayName: "", jobTitle: "", role: "user" };
+
+/** Nobody invited here has any CAPEX entity access to start with; the column is kept empty. */
+const NO_ENTITY_ACCESS: EntityAccess = {};
 
 /**
  * Roles, in the order they are offered - least to most.
  *
- * The words come from `ROLE_LABELS` / `ROLE_HINTS`, so the button that grants a
- * role and the chip that reports one cannot describe it differently.
+ * The words come from `ROLE_LABELS` / `ROLE_HINTS`, so the card that grants a role and
+ * the chip that reports one cannot describe it differently.
  */
 const ROLE_OPTIONS: Array<{ role: UserRole; label: string; hint: string }> = USER_ROLES.map((role) => ({
   role,
   label: ROLE_LABELS[role],
   hint: ROLE_HINTS[role],
 }));
+
+const joinedDate = (iso: string): string =>
+  iso
+    ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "";
 
 export default function AdminUsersPage() {
   const {
@@ -92,10 +90,10 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [formData, setFormData] = useState<UserFormData>(EMPTY_FORM);
+  const [formData, setFormData] = useState<InviteForm>(EMPTY_FORM);
+  /** The row whose role is being saved, so only its own chip is busy. */
+  const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   /** The profile the delete dialog is asking about, if it is open. */
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -125,8 +123,11 @@ export default function AdminUsersPage() {
   );
 
   // Fetch users
+  /* The list is blanked for the first load only: a re-read after a role change must not throw
+     the reader back to a loader and lose their place in the list. */
+  const hasLoaded = useRef(false);
   const fetchUsers = useCallback(async () => {
-    setIsLoading(true);
+    if (!hasLoaded.current) setIsLoading(true);
     setError(null);
     try {
       const response = await withFreshSession("/api/admin/users");
@@ -143,6 +144,7 @@ export default function AdminUsersPage() {
       }
       const data = await response.json();
       setUsers(data.users || []);
+      hasLoaded.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load users");
     } finally {
@@ -167,45 +169,6 @@ export default function AdminUsersPage() {
     );
   }, [users, search]);
 
-  // Handle user selection
-  const handleSelectUser = (user: UserProfile) => {
-    setSelectedUser(user);
-    setIsCreating(false);
-    setNotice(null);
-    setSent(null);
-    setFormData({
-      email: user.email,
-      displayName: user.displayName,
-      jobTitle: user.jobTitle,
-      role: user.role,
-      entityAccess: { ...user.entityAccess },
-    });
-  };
-
-  // Handle create new
-  const handleCreateNew = () => {
-    setSelectedUser(null);
-    setIsCreating(true);
-    setNotice(null);
-    setSent(null);
-    setFormData(EMPTY_FORM);
-  };
-
-  /**
-   * Close the form.
-   *
-   * Deliberately does **not** clear `notice` or `sent`, unlike the two handlers
-   * above: the successful path through Create User ends by calling this, and
-   * the whole point of "Invitation sent to ..." is that it survives the form
-   * closing. Opening a form again does clear them, because by then the message
-   * is about a record the admin has stopped looking at.
-   */
-  const handleCancel = () => {
-    setSelectedUser(null);
-    setIsCreating(false);
-    setFormData(EMPTY_FORM);
-  };
-
   /**
    * A person picked from Office 365 - the name and the email land together.
    *
@@ -215,29 +178,16 @@ export default function AdminUsersPage() {
    */
   const handlePickDirectoryUser = (picked: Office365User | null) => {
     if (!picked) {
-      // Clearing the field on an existing profile would only unpair the name
-      // from an email that cannot change, so the name is left alone there.
-      if (isCreating) setFormData({ ...formData, displayName: "", email: "", jobTitle: "" });
+      setFormData((form) => ({ ...form, displayName: "", email: "", jobTitle: "" }));
       return;
     }
-
     const email = (picked.mail || picked.email || picked.userPrincipalName || "").toLowerCase();
-
-    if (!isCreating && selectedUser && email && email !== selectedUser.email.toLowerCase()) {
-      setNotice(
-        `${picked.displayName} signs in as ${email}, and the email on a profile is the account itself - it cannot be reassigned. Register them as a new user instead.`
-      );
-      return;
-    }
-
-    setFormData({
-      ...formData,
+    setFormData((form) => ({
+      ...form,
       displayName: picked.displayName,
       jobTitle: picked.jobTitle || "",
-      // Left as it is when editing: the email is the key this profile was
-      // created under, and the API refuses to change it.
-      email: isCreating ? email : formData.email,
-    });
+      email,
+    }));
   };
 
   /**
@@ -263,7 +213,7 @@ export default function AdminUsersPage() {
       displayName: string;
       email: string;
       role: UserRole;
-      entityAccess: EntityAccess;
+      entityAccess?: EntityAccess;
     }): Promise<{ ok: boolean; message: string }> => {
       try {
         const msal = await import("@/lib/providers/dataverse/msal-browser");
@@ -273,7 +223,7 @@ export default function AdminUsersPage() {
             displayName: user.displayName,
             email: user.email,
             role: user.role,
-            entityAccess: user.entityAccess,
+            entityAccess: user.entityAccess ?? NO_ENTITY_ACCESS,
             invitedBy: userProfile?.displayName || userProfile?.email || "",
           },
           graphToken
@@ -313,68 +263,62 @@ export default function AdminUsersPage() {
     setInvitingId(null);
   };
 
-  // Save user (create or update)
-  const handleSave = async () => {
+  /**
+   * Create the profile and mail the invitation.
+   *
+   * The invitation goes out from the browser: the POST runs on the server, where there is
+   * no delegated Graph token to send `/me/mail` with. Its outcome is waited for so it can be
+   * reported - but its failure is a notice, never an error, because the profile already
+   * exists and pressing Send Invitation again would be refused as a duplicate.
+   */
+  const handleInvitePerson = async () => {
     setIsSaving(true);
     setNotice(null);
+    setSent(null);
+    setError(null);
     try {
-      if (isCreating) {
-        // Create new user
-        const response = await withFreshSession("/api/admin/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to create user");
-        }
-        // The invitation goes out here, from the browser: the POST above runs on
-        // the server, where there is no delegated Graph token to send `/me/mail`
-        // with. Its outcome is waited for, so it can be reported - but its
-        // failure is a notice, never an error, because the profile is already
-        // created and re-pressing Create would be refused as a duplicate.
-        //
-        // Alongside the re-read rather than before it. They share nothing: the
-        // list comes back from Dataverse, the mail goes out through Graph, and
-        // neither needs the other's answer. Run in sequence, a Save that
-        // already cost one round trip sat spinning through two more, the middle
-        // one being a token acquisition and a send.
-        const [invite] = await Promise.all([announceInvite(data.user), fetchUsers()]);
+      const response = await withFreshSession("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...formData, entityAccess: NO_ENTITY_ACCESS }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to create user");
 
-        // A column this environment does not have yet is a notice, not a
-        // failure: everything else was saved.
-        const warnings = [data.warning, invite.ok ? null : invite.message].filter(
-          Boolean
-        ) as string[];
-        setNotice(warnings.length > 0 ? warnings.join(" ") : null);
-        setSent(invite.ok ? invite.message : null);
-        if (!data.warning) handleCancel();
-      } else if (selectedUser) {
-        // Update existing user
-        const response = await withFreshSession(`/api/admin/users/${selectedUser.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            displayName: formData.displayName,
-            jobTitle: formData.jobTitle,
-            role: formData.role,
-            entityAccess: formData.entityAccess,
-          }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to update user");
-        }
-        if (data.warning) setNotice(data.warning);
-        await fetchUsers();
-        // Update selected user
-        setSelectedUser(data.user);
-      }
+      // Alongside the re-read rather than before it: they share nothing.
+      const [invite] = await Promise.all([announceInvite(data.user), fetchUsers()]);
+      const warnings = [data.warning, invite.ok ? null : invite.message].filter(Boolean) as string[];
+      setNotice(warnings.length > 0 ? warnings.join(" ") : null);
+      setSent(invite.ok ? invite.message : null);
+      setFormData(EMPTY_FORM);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  /** A role chosen on a row: saved at once, and the list re-read so it shows what is stored. */
+  const handleChangeRole = async (user: UserProfile, role: UserRole) => {
+    if (role === user.role) return;
+    setSavingRoleId(user.id);
+    setError(null);
+    setNotice(null);
+    setSent(null);
+    try {
+      const response = await withFreshSession(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Failed to change the role");
+      if (data.warning) setNotice(data.warning);
+      await fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to change the role");
+    } finally {
+      setSavingRoleId(null);
     }
   };
 
@@ -391,11 +335,6 @@ export default function AdminUsersPage() {
         throw new Error(data.error || "Failed to update user");
       }
       await fetchUsers();
-      // Update selected user if it's the same
-      if (selectedUser?.id === user.id) {
-        const data = await response.json();
-        setSelectedUser(data.user);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update");
     }
@@ -429,7 +368,6 @@ export default function AdminUsersPage() {
           : null
       );
       setUserToDelete(null);
-      if (selectedUser?.id === userToDelete.id) handleCancel();
       await fetchUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete the profile");
@@ -441,8 +379,9 @@ export default function AdminUsersPage() {
 
   // Check if current user can edit this user
   const canEdit = (user: UserProfile) => {
-    // Can't edit yourself (except display name)
-    return userProfile?.email.toLowerCase() !== user.email.toLowerCase();
+    // Can't edit yourself; and until the signed-in profile is known, nobody is editable.
+    if (!userProfile) return false;
+    return userProfile.email.toLowerCase() !== user.email.toLowerCase();
   };
 
   // Admin only. This page used to draw its own refusal, which is how the Admin
@@ -450,47 +389,47 @@ export default function AdminUsersPage() {
   // shared one now, and the same one guards every other screen in the area.
   if (access !== "allowed") return <AdminScreenGate state={access} need="admin-users" />;
 
+  const canInvite = !!formData.email && !!formData.displayName && !isSaving;
+  const pickedPerson: Office365User | null = formData.displayName
+    ? { id: "", displayName: formData.displayName, mail: formData.email || null, jobTitle: formData.jobTitle || null }
+    : null;
+
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-[#2D2A28]">
       <Header />
 
-      <main className="flex-1 py-6 md:py-8 px-4 md:px-6">
-        <div className="max-w-6xl mx-auto">
+      <main className="flex-1 py-6 md:py-8 px-3 md:px-6">
+        <div className="max-w-4xl mx-auto">
           {/* Page Header */}
           <div className="mb-6">
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-2 text-[#B0B5B5] hover:text-[#0057BC] mb-3 transition-colors text-sm"
+              className="inline-flex items-center gap-2 text-[#B0B5B5] hover:text-[#0057BC] mb-4 transition-colors text-sm"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Home
             </Link>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-[#2D2A28] dark:text-white">
-                  User Management
-                </h1>
-                <p className="text-sm md:text-base text-[#B0B5B5] mt-1">
-                  Manage user access and permissions
+            <div className="flex items-center gap-4">
+              <div className="shrink-0 w-12 h-12 md:w-14 md:h-14 rounded-full bg-[#0057BC]/10 dark:bg-[#00A3DE]/15 flex items-center justify-center">
+                <Shield className="w-6 h-6 md:w-7 md:h-7 text-[#0057BC] dark:text-[#00A3DE]" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-2xl md:text-3xl font-bold text-[#2D2A28] dark:text-white">User Management</h1>
+                <p className="text-sm md:text-base text-slate-500 dark:text-slate-400 mt-0.5">
+                  Invite new users and manage roles
                 </p>
               </div>
-              <button
-                onClick={handleCreateNew}
-                className="flex items-center gap-2 px-4 py-2 bg-[#0057BC] text-white rounded-lg hover:bg-[#004494] transition-colors text-sm md:text-base"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Add User</span>
-              </button>
             </div>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 flex items-center gap-2">
+            <div role="alert" className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 flex items-center gap-2">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
               <span>{error}</span>
               <button
                 onClick={() => setError(null)}
+                aria-label="Dismiss"
                 className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
               >
                 <X className="w-4 h-4" />
@@ -505,6 +444,7 @@ export default function AdminUsersPage() {
               <span className="text-sm">{notice}</span>
               <button
                 onClick={() => setNotice(null)}
+                aria-label="Dismiss"
                 className="ml-auto p-1 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded"
               >
                 <X className="w-4 h-4" />
@@ -512,7 +452,7 @@ export default function AdminUsersPage() {
             </div>
           )}
 
-          {/* A message that actually left the building. Green, not amber: the
+          {/* A message that actually left the building. HOYA Blue, not amber: the
               panel above it means "read this, something is off". */}
           {sent && (
             <div className="mb-4 p-4 bg-[#0057BC]/5 dark:bg-[#00A3DE]/10 border border-[#0057BC]/30 dark:border-[#00A3DE]/40 rounded-lg text-[#0057BC] dark:text-[#00A3DE] flex items-center gap-2">
@@ -520,6 +460,7 @@ export default function AdminUsersPage() {
               <span className="text-sm">{sent}</span>
               <button
                 onClick={() => setSent(null)}
+                aria-label="Dismiss"
                 className="ml-auto p-1 hover:bg-[#0057BC]/10 dark:hover:bg-[#00A3DE]/15 rounded"
               >
                 <X className="w-4 h-4" />
@@ -527,329 +468,247 @@ export default function AdminUsersPage() {
             </div>
           )}
 
-          {/* Main Content - Split View. 40 / 60 (ui-design 0.2), not 33 / 67:
-              at a third the rows wrapped their budget line and cut names short,
-              while the form beside it had room to spare (asked 2026-10-02). */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6">
-            {/* Left Panel - User List */}
-            <div className="lg:col-span-2 order-2 lg:order-1">
-              <GlassCard className="p-4">
-                {/* Search */}
-                <div className="relative mb-4">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B0B5B5]" />
-                  <input
-                    type="text"
-                    placeholder="Search users..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0057BC]"
-                  />
-                </div>
+          {/* Invite New User */}
+          <GlassCard className="p-4 md:p-8 mb-6">
+            <h2 className="text-lg md:text-xl font-semibold text-[#2D2A28] dark:text-white mb-5">Invite New User</h2>
 
-                {/* Refresh Button */}
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm text-[#B0B5B5]">
-                    {filteredUsers.length} user{filteredUsers.length !== 1 ? "s" : ""}
-                  </span>
-                  <button
-                    onClick={fetchUsers}
-                    disabled={isLoading}
-                    className="p-1.5 text-[#B0B5B5] hover:text-[#0057BC] hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-                  </button>
-                </div>
+            {/* Both boxes search the same directory and fill the same person, so the
+                name, the email and the title can never belong to different people. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              <div>
+                <label className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1.5">
+                  Email Address <span className="text-red-500">*</span>
+                </label>
+                <UserSearchSelect
+                  selectedUser={pickedPerson}
+                  onSelect={handlePickDirectoryUser}
+                  getAccessToken={getGraphAccessToken}
+                  placeholder="Start typing to search..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1.5">Full Name</label>
+                <UserSearchSelect
+                  selectedUser={pickedPerson}
+                  onSelect={handlePickDirectoryUser}
+                  getAccessToken={getGraphAccessToken}
+                  placeholder="Start typing to search..."
+                  nameOnly
+                />
+              </div>
+            </div>
 
-                {/* User List */}
-                <div className="space-y-2 max-h-[calc(100vh-380px)] overflow-y-auto">
-                  {isLoading ? (
-                    <LoadingBlock text="Loading users..." size={24} row={false} className="py-8" />
-                  ) : filteredUsers.length === 0 ? (
-                    <div className="py-8 text-center text-[#B0B5B5]">
-                      No users found
-                    </div>
-                  ) : (
-                    filteredUsers.map((user) => (
-                      // A div, not a button: the row now carries an Invite
-                      // button of its own, and a button inside a button is
-                      // invalid HTML - the browser closes the outer one early
-                      // and the row stops being clickable below the split.
-                      <div
-                        key={user.id}
-                        className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
-                          selectedUser?.id === user.id
-                            ? "border-[#0057BC] bg-[#0057BC]/5"
-                            : "border-slate-200 dark:border-slate-700 hover:border-[#0057BC]/50 hover:bg-slate-50 dark:hover:bg-slate-800"
-                        } ${!user.isActive ? "opacity-60" : ""}`}
+            <fieldset className="mt-6">
+              <legend className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-2">
+                Role <span className="text-red-500">*</span>
+              </legend>
+              <div role="radiogroup" aria-label="Role" className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {ROLE_OPTIONS.map(({ role, label, hint }) => {
+                  const selected = formData.role === role;
+                  return (
+                    <button
+                      key={role}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setFormData({ ...formData, role })}
+                      className={`text-left p-4 rounded-xl border-2 transition-all duration-300 ease-in-out ${
+                        selected
+                          ? "border-[#0057BC] bg-[#0057BC]/10 dark:border-[#00A3DE] dark:bg-[#00A3DE]/15"
+                          : "border-transparent bg-slate-50 dark:bg-slate-800 hover:border-[#0057BC]/30 dark:hover:border-[#00A3DE]/40"
+                      }`}
+                    >
+                      <span
+                        className={`block font-semibold ${
+                          selected ? "text-[#0057BC] dark:text-[#00A3DE]" : "text-[#2D2A28] dark:text-white"
+                        }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleSelectUser(user)}
-                            className="min-w-0 flex-1 text-left"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm truncate text-[#2D2A28] dark:text-white">
-                                {user.displayName || user.email.split("@")[0]}
-                              </span>
-                              {/* Every row says its role, an ordinary User
-                                  included. A shield for the admin and nothing
-                                  for anybody else left the commonest role
-                                  looking like a row that had not finished
-                                  loading, and made "who can approve at IIR?"
-                                  a question about a missing icon. */}
-                              <RoleBadge role={user.role} />
-                            </div>
-                            <div className="text-xs text-[#B0B5B5] truncate">
-                              {user.email}
-                            </div>
-                          </button>
-                          <div className="flex-shrink-0 flex items-center gap-1.5">
-                            {user.isActive ? (
-                              <span className="px-2 py-0.5 text-xs bg-[#0057BC]/10 text-[#0057BC] dark:text-[#00A3DE] rounded-full">
-                                Active
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 text-xs bg-slate-200 text-slate-600 rounded-full">
+                        {label}
+                      </span>
+                      <span className="block mt-1 text-sm text-slate-500 dark:text-slate-400">{hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={handleInvitePerson}
+                disabled={!canInvite}
+                className="flex items-center gap-2 px-6 py-3 bg-[#0057BC] text-white rounded-full font-semibold hover:bg-[#004494] transition-all duration-300 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isSaving ? <BusyRing size={22} /> : <UserPlus className="w-5 h-5" aria-hidden="true" />}
+                {isSaving ? "Sending..." : "Send Invitation"}
+              </button>
+            </div>
+          </GlassCard>
+
+          {/* All Users */}
+          <GlassCard className="p-4 md:p-8">
+            <h2 className="text-lg md:text-xl font-semibold text-[#2D2A28] dark:text-white mb-5">
+              All Users ({users.length})
+            </h2>
+
+            <div className="relative mb-4">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" aria-hidden="true" />
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                aria-label="Search users by name or email"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-sm md:text-base text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0057BC]"
+              />
+            </div>
+
+            {/* Column heads: from md, where the row is a grid. Below it each row
+                stacks and says what each part is by its icon and place. */}
+            <div className="hidden md:grid grid-cols-[minmax(0,1.7fr)_150px_140px_minmax(0,1.1fr)] gap-4 px-3 pb-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+              <span>User</span>
+              <span>Role</span>
+              <span>Joined</span>
+              <span className="text-right">Actions</span>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+              {isLoading ? (
+                <LoadingBlock text="Loading users..." size={32} row={false} className="py-10" />
+              ) : filteredUsers.length === 0 ? (
+                <div className="py-10 text-center text-slate-500 dark:text-slate-400">No users found</div>
+              ) : (
+                filteredUsers.map((user) => {
+                  const editable = canEdit(user);
+                  const roleChoices = ROLE_OPTIONS.some((option) => option.role === user.role)
+                    ? ROLE_OPTIONS
+                    : [...ROLE_OPTIONS, { role: user.role, label: ROLE_LABELS[user.role], hint: ROLE_HINTS[user.role] }];
+                  return (
+                    <div
+                      key={user.id}
+                      className={`flex flex-col gap-3 py-4 px-3 md:grid md:grid-cols-[minmax(0,1.7fr)_150px_140px_minmax(0,1.1fr)] md:items-center md:gap-4 ${
+                        !user.isActive ? "opacity-60" : ""
+                      }`}
+                    >
+                      {/* User */}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="shrink-0 w-11 h-11 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+                          <User className="w-5 h-5 text-slate-400" aria-hidden="true" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-semibold text-[#2D2A28] dark:text-white truncate">
+                              {user.displayName || user.email.split("@")[0]}
+                            </span>
+                            {!user.isActive && (
+                              <span className="shrink-0 px-2 py-0.5 text-[11px] rounded-full bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                                 Inactive
                               </span>
                             )}
-                            {/* Offered on every active row, not only on new
-                                ones: the commonest reason to press it is that
-                                the first message was deleted or never arrived,
-                                and nothing here records that one was sent. An
-                                inactive profile has no access to invite anybody
-                                to, so it is not offered for one. */}
-                            {user.isActive && (
-                              <button
-                                type="button"
-                                onClick={() => handleInvite(user)}
-                                disabled={invitingId !== null}
-                                title={`Email an invitation to ${user.email}`}
-                                aria-label={`Email an invitation to ${user.email}`}
-                                className="p-1.5 text-[#B0B5B5] hover:text-[#0057BC] hover:bg-[#0057BC]/10 rounded-md transition-colors disabled:opacity-40 disabled:hover:text-[#B0B5B5] disabled:hover:bg-transparent"
-                              >
-                                {invitingId === user.id ? (
-                                  <RefreshCw className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Mail className="w-4 h-4" />
-                                )}
-                              </button>
-                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 min-w-0">
+                            <Mail className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                            <span className="truncate">{user.email}</span>
                           </div>
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
-              </GlassCard>
-            </div>
 
-            {/* Right Panel - Edit Form */}
-            <div className="lg:col-span-3 order-1 lg:order-2">
-              <GlassCard className="p-6">
-                {!selectedUser && !isCreating ? (
-                  // Empty State
-                  <div className="py-12 text-center">
-                    <User className="w-16 h-16 mx-auto mb-4 text-[#B0B5B5]" />
-                    <h3 className="text-lg font-semibold text-[#2D2A28] dark:text-white mb-2">
-                      Select a User
-                    </h3>
-                    {/* No "Add New User" button here on purpose - the header's
-                        "Add User" is the one way to create, and a second blue
-                        button competes with the instruction above it. */}
-                    <p className="text-[#B0B5B5]">
-                      Choose a user from the list to edit their details
-                    </p>
-                  </div>
-                ) : (
-                  // Edit Form
-                  <div>
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-semibold text-[#2D2A28] dark:text-white">
-                        {isCreating ? "Add New User" : "Edit User"}
-                      </h2>
-                      <button
-                        onClick={handleCancel}
-                        className="p-2 text-[#B0B5B5] hover:text-[#2D2A28] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4">
-                      {/* User Name - the whole identity in one control: the pick
-                          carries the name, the email and the title together, so
-                          none of the three can end up belonging to somebody
-                          else. No separate email field: the control shows it. */}
+                      {/* Role - a menu for somebody else's row, a plain chip for your own
+                          (the server refuses to change the role of the account you are in). */}
                       <div>
-                        <label className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1">
-                          User Name <span className="text-red-500">*</span>
-                        </label>
-                        <UserSearchSelect
-                          selectedUser={
-                            formData.displayName
-                              ? {
-                                  id: "",
-                                  displayName: formData.displayName,
-                                  mail: formData.email || null,
-                                  jobTitle: formData.jobTitle || null,
-                                }
-                              : null
-                          }
-                          onSelect={handlePickDirectoryUser}
-                          getAccessToken={getGraphAccessToken}
-                          disabled={!!(selectedUser && !canEdit(selectedUser))}
-                          placeholder="Search Office 365 users..."
-                        />
-                        {!isCreating && selectedUser && isSuperAdmin(selectedUser.email) && (
-                          <p className="mt-1 text-xs text-[#0057BC]">
-                            Super admin account (cannot be modified by others)
-                          </p>
+                        {editable ? (
+                          <div className="relative inline-flex items-center">
+                            <select
+                              value={user.role}
+                              disabled={savingRoleId !== null}
+                              onChange={(e) => handleChangeRole(user, e.target.value as UserRole)}
+                              aria-label={`Role of ${user.displayName || user.email}`}
+                              title={ROLE_HINTS[user.role]}
+                              className="appearance-none cursor-pointer pl-3 pr-8 py-1.5 text-sm font-medium rounded-full border border-[#0057BC]/30 bg-[#0057BC]/10 text-[#0057BC] dark:border-[#00A3DE]/40 dark:bg-[#00A3DE]/15 dark:text-[#00A3DE] focus:outline-none focus:ring-2 focus:ring-[#0057BC] disabled:opacity-60 disabled:cursor-wait"
+                            >
+                              {roleChoices.map(({ role, label }) => (
+                                <option key={role} value={role} className="text-[#2D2A28]">
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
+                            {savingRoleId === user.id ? (
+                              <span className="absolute right-2 pointer-events-none">
+                                <BusyRing size={14} />
+                              </span>
+                            ) : (
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 20 20"
+                                className="absolute right-2.5 w-3.5 h-3.5 pointer-events-none text-[#0057BC] dark:text-[#00A3DE]"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </div>
+                        ) : (
+                          <RoleBadge role={user.role} className="!text-sm !px-3 !py-1 !rounded-full" />
                         )}
                       </div>
 
-                      {/* Role */}
-                      <div>
-                        <label className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1">
-                          Role
-                        </label>
-                        {/* Six roles: two by two on a phone, three across from `sm` -
-                            and two by two again at `lg`, where the form shares
-                            the row with the list: at 1024 a button gets 125px and
-                            "CAPEX-Admin" needed 132 (measured 2026-10-02; it is the
-                            shorter "IIR-Admin" since 2026-10-17). */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2">
-                          {ROLE_OPTIONS.map(({ role, label, hint }) => (
-                            <button
-                              key={role}
-                              type="button"
-                              onClick={() => setFormData({ ...formData, role })}
-                              disabled={!!(selectedUser && !canEdit(selectedUser))}
-                              title={hint}
-                              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 transition-colors ${
-                                formData.role === role
-                                  ? "border-[#0057BC] bg-[#0057BC]/10 text-[#0057BC]"
-                                  : "border-slate-300 dark:border-slate-600 hover:border-[#0057BC]/50"
-                              } disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                              {role === "admin" ? (
-                                <Shield className="w-4 h-4" />
-                              ) : role === "faadmin" ? (
-                                <ShieldCheck className="w-4 h-4" />
-                              ) : role === "invoicepreparer" ? (
-                                <ShieldPlus className="w-4 h-4" />
-                              ) : (
-                                <User className="w-4 h-4" />
-                              )}
-                              {label}
-                            </button>
-                          ))}
-                        </div>
+                      {/* Joined */}
+                      <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <Calendar className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />
+                        {joinedDate(user.createdAt)}
                       </div>
 
-                      {/* Active Status (only for existing users) */}
-                      {!isCreating && selectedUser && canEdit(selectedUser) && (
-                        <div>
-                          <label className="block text-sm font-medium text-[#2D2A28] dark:text-white mb-1">
-                            Account Status
-                          </label>
+                      {/* Actions */}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 md:justify-end">
+                        {user.isActive && (
                           <button
                             type="button"
-                            onClick={() => handleToggleActive(selectedUser)}
-                            className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors ${
-                              selectedUser.isActive
-                                ? "border-[#0057BC]/30 bg-[#0057BC]/5 dark:bg-[#00A3DE]/10"
-                                : "border-slate-300 bg-slate-50 dark:bg-slate-800"
-                            }`}
+                            onClick={() => handleInvite(user)}
+                            disabled={invitingId !== null}
+                            title={`Email the app link to ${user.email}`}
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-40 disabled:no-underline"
                           >
-                            {selectedUser.isActive ? (
-                              <>
-                                <ToggleRight className="w-6 h-6 text-[#0057BC] dark:text-[#00A3DE]" />
-                                <span className="text-[#0057BC] dark:text-[#00A3DE] font-medium">
-                                  Active
-                                </span>
-                                <span className="text-sm text-[#B0B5B5] ml-auto">
-                                  Click to deactivate
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <ToggleLeft className="w-6 h-6 text-slate-400" />
-                                <span className="text-slate-600 dark:text-slate-400 font-medium">
-                                  Inactive
-                                </span>
-                                <span className="text-sm text-[#B0B5B5] ml-auto">
-                                  Click to activate
-                                </span>
-                              </>
-                            )}
+                            {invitingId === user.id ? <BusyRing size={16} /> : <Send className="w-4 h-4" aria-hidden="true" />}
+                            Send App Link
                           </button>
-                        </div>
-                      )}
-
-                      {/* Last Login (read-only) */}
-                      {!isCreating && selectedUser?.lastLoginAt && (
-                        <div>
-                          <label className="block text-sm font-medium text-[#B0B5B5] mb-1">
-                            Last Login
-                          </label>
-                          <p className="text-sm text-[#2D2A28] dark:text-white">
-                            {new Date(selectedUser.lastLoginAt).toLocaleString("en-US")}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
-                      {/* Delete sits apart from Cancel and Save, and only for a
-                          profile that is not yours - the server refuses your own
-                          either way, and a button that exists to be refused is
-                          just a worse error message. */}
-                      {!isCreating && selectedUser && canEdit(selectedUser) && (
-                        <button
-                          onClick={() => setUserToDelete(selectedUser)}
-                          className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors mr-auto"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete profile
-                        </button>
-                      )}
-                      <button
-                        onClick={handleCancel}
-                        className="px-4 py-2 text-[#B0B5B5] hover:text-[#2D2A28] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSave}
-                        // A registration needs both, and the directory pick
-                        // supplies them together - so this only ever bites on
-                        // the manual fallback.
-                        disabled={
-                          isSaving || (isCreating && (!formData.email || !formData.displayName))
-                        }
-                        className="flex items-center gap-2 px-6 py-2 bg-[#0057BC] text-white rounded-lg hover:bg-[#004494] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isSaving ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <Save className="w-4 h-4" />
-                            {isCreating ? "Create User" : "Save Changes"}
-                          </>
                         )}
-                      </button>
+                        {editable && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(user)}
+                            title={user.isActive ? "Revoke access and keep the record" : "Give access back"}
+                            className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-[#0057BC] dark:hover:text-[#00A3DE]"
+                          >
+                            {user.isActive ? (
+                              <ToggleRight className="w-4 h-4" aria-hidden="true" />
+                            ) : (
+                              <ToggleLeft className="w-4 h-4" aria-hidden="true" />
+                            )}
+                            {user.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                        )}
+                        {/* Delete is only offered for a profile that is not yours - the server
+                            refuses your own either way, and a button that exists to be refused
+                            is just a worse error message. */}
+                        {editable && (
+                          <button
+                            type="button"
+                            onClick={() => setUserToDelete(user)}
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 hover:underline"
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </GlassCard>
+                  );
+                })
+              )}
             </div>
-          </div>
+          </GlassCard>
         </div>
       </main>
 
@@ -867,8 +726,8 @@ export default function AdminUsersPage() {
           recordSubtitle={userToDelete.email}
           warning={
             isSuperAdmin(userToDelete.email)
-              ? "This address is on the super-admin list. If it is the address Dataverse holds for that account, a fresh profile is created the next time it signs in - with no entity access. If it is that person's second address - a sign-in ID beside their mailbox address - it will not come back. Either way, deleting clears a duplicate rather than revoking access; for that, use Account Status."
-              : "The profile and its entity access are removed. Ringis and routes that name this person keep their own copy of the name and address, so nothing already circulated changes. To revoke access without losing the record, use Account Status instead."
+              ? "This address is on the super-admin list. If it is the address Dataverse holds for that account, a fresh profile is created the next time it signs in - with no entity access. If it is that person's second address - a sign-in ID beside their mailbox address - it will not come back. Either way, deleting clears a duplicate rather than revoking access; for that, use Deactivate."
+              : "The profile and its entity access are removed. Ringis and routes that name this person keep their own copy of the name and address, so nothing already circulated changes. To revoke access without losing the record, use Deactivate instead."
           }
           isDeleting={isDeleting}
           onCancel={() => setUserToDelete(null)}

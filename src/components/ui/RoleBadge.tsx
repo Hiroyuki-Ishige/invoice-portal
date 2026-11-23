@@ -1,5 +1,5 @@
 /**
- * The chip that says what somebody is: Admin, F&A-Admin or User.
+ * The chip that says what somebody is: Admin, F&A Admin or User.
  *
  * One component, because a role shown two ways is a role somebody argues
  * about. It lives beside the signed-in name in the header and against every
@@ -7,7 +7,7 @@
  * `ROLE_LABELS` - the same list the role is *granted* from.
  *
  * **Every role gets a chip, including `user`.** The list used to draw a shield
- * for an admin, a small "F&A" for an F&A-Admin, and nothing at all for anybody
+ * for an admin, a small "F&A" for an F&A Admin, and nothing at all for anybody
  * else, which leaves the commonest role indistinguishable from a row that has
  * not finished loading. Silence is not a value (CLAUDE.md rule 10).
  */
@@ -29,10 +29,6 @@ const ROLE_CLASSES: Record<UserRole, string> = {
      one hue, two weights). */
   capexadmin:
     "bg-white text-[#0057BC] border-[#0057BC]/40 dark:bg-transparent dark:text-[#00A3DE] dark:border-[#00A3DE]/40",
-  invoicepreparer:
-    "bg-white text-[#0057BC] border-[#0057BC]/40 dark:bg-transparent dark:text-[#00A3DE] dark:border-[#00A3DE]/40",
-  invoicereceiver:
-    "bg-white text-[#2D2A28] border-[#2D2A28]/40 dark:bg-transparent dark:text-slate-300 dark:border-slate-500",
   user: "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700",
 };
 

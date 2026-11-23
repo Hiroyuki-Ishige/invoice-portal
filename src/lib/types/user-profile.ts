@@ -125,16 +125,16 @@ export function countGrantedEntities(access: EntityAccess | null | undefined): n
  * the ringi's own Finance powers (`isAdminOrFinance`) do not include it. Its
  * option in Dataverse is added by Admin > Setup.
  */
-export type UserRole = "admin" | "faadmin" | "capexadmin" | "invoicepreparer" | "invoicereceiver" | "user";
+export type UserRole = "admin" | "faadmin" | "capexadmin" | "user";
 
-/** Every role, least to most - the order the Role buttons offer them. */
-export const USER_ROLES: readonly UserRole[] = [
-  "user",
-  "invoicereceiver",
-  "invoicepreparer",
-  "faadmin",
-  "admin",
-];
+/**
+ * Every role, least to most - the order the Role cards offer them.
+ *
+ * **Three roles since 2026-11-23**: Admin, F&A Admin and User. Invoice preparer
+ * and Invoice receiver (added 2026-11-18) were folded away - see
+ * `RETIRED_ROLE_VALUES`.
+ */
+export const USER_ROLES: readonly UserRole[] = ["user", "faadmin", "admin"];
 
 /** A role name off a request body, checked against the one list (rule 5). */
 export function isUserRole(value: unknown): value is UserRole {
@@ -149,18 +149,21 @@ export const ROLE_VALUES = {
   user: 2,
   faadmin: 3,
   capexadmin: 4,
-  /** Added 2026-11-18 for the invoice work. */
-  invoicepreparer: 5,
-  invoicereceiver: 6,
 } as const;
+
+/**
+ * **Dataverse values of roles that no longer exist** (Invoice preparer 5, Invoice
+ * receiver 6; retired 2026-11-23). Their options stay in the choice column so a row
+ * that still holds one can be read, and `getRoleName` reads them as a plain User.
+ * Admin > Setup > Top up rewrites those rows to User (`migrateRetiredRoles`).
+ */
+export const RETIRED_ROLE_VALUES: readonly number[] = [5, 6];
 
 /** Labels for the role choice, matching the Dataverse option labels. */
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
-  faadmin: "F&A-Admin",
+  faadmin: "F&A Admin",
   capexadmin: "IIR-Admin",
-  invoicepreparer: "Invoice preparer",
-  invoicereceiver: "Invoice receiver",
   user: "User",
 };
 
@@ -173,11 +176,9 @@ export const ROLE_LABELS: Record<UserRole, string> = {
  * F&A-Admin an ordinary user.
  */
 export const ROLE_HINTS: Record<UserRole, string> = {
-  admin: "Everything, including this screen",
-  faadmin: "Finance & Accounting - by default the IIR approval mark and the Finance admin screens (Admin > Role Permissions)",
+  admin: "Full access - creates and cancels invoices, manages users and settings",
+  faadmin: "Finance & Accounting - creates, issues and cancels invoices, and keeps who is told about them",
   capexadmin: "IIR administrator - by default a User plus Edit on Meeting in MD and IIR Deck (Admin > Role Permissions)",
-  invoicepreparer: "Prepares invoices - creates, issues and may cancel them",
-  invoicereceiver: "Receives claims - creates and issues invoices, but may not cancel them",
   user: "Reads the invoice screens",
 };
 
@@ -188,8 +189,7 @@ export function getRoleName(value: number): UserRole {
   if (value === ROLE_VALUES.admin) return "admin";
   if (value === ROLE_VALUES.faadmin) return "faadmin";
   if (value === ROLE_VALUES.capexadmin) return "capexadmin";
-  if (value === ROLE_VALUES.invoicepreparer) return "invoicepreparer";
-  if (value === ROLE_VALUES.invoicereceiver) return "invoicereceiver";
+  // Includes the retired invoice roles (RETIRED_ROLE_VALUES): a plain User.
   return "user";
 }
 
@@ -232,28 +232,23 @@ export function mayDeleteEmptyItems(
 }
 
 /**
- * **May this role create and issue an invoice?** Admin, F&A-Admin, Invoice preparer and
- * Invoice receiver (decided 2026-11-18). These are the defaults of the `invoices` row of
- * Admin > Role Permissions; the server still asks the table (`checkArea`).
+ * **May this role create and issue an invoice?** Admin and F&A Admin (decided 2026-11-23,
+ * when the Invoice preparer and Invoice receiver roles were retired). These are the defaults
+ * of the `invoices` row of Admin > Role Permissions; the server still asks the table
+ * (`checkArea`).
  */
-export const INVOICE_CREATOR_ROLES: readonly UserRole[] = [
-  "admin",
-  "faadmin",
-  "invoicepreparer",
-  "invoicereceiver",
-];
+export const INVOICE_CREATOR_ROLES: readonly UserRole[] = ["admin", "faadmin"];
 
 /**
- * **May this role cancel an issued invoice?** Admin, F&A-Admin and Invoice preparer - not
- * the Invoice receiver. One predicate for the button and the route (rule 5). Super admins
- * qualify because they are admins by definition.
+ * **May this role cancel an issued invoice?** Admin and F&A Admin. One predicate for the
+ * button and the route (rule 5). Super admins qualify because they are admins by definition.
  */
 export function mayCancelInvoices(
   role: UserRole | null | undefined,
   email?: string | null
 ): boolean {
   if (email && isSuperAdmin(email)) return true;
-  return role === "admin" || role === "faadmin" || role === "invoicepreparer";
+  return role === "admin" || role === "faadmin";
 }
 
 /**
