@@ -52,8 +52,14 @@ Azure AD / MSAL.js · Lucide · SWR · isomorphic-dompurify · jsPDF + autotable
 
 - Invoice Portal 用アプリ登録済み (HOYA Corporation テナント、シングルテナント)。
   Client ID `a20ad64f-24cb-4c99-a6c2-320611d971f8` / Tenant ID `bf781f77-403a-41b0-bc8d-aef742fcc54e`。
-  SPA リダイレクト URI は `http://localhost:3000/auth/callback` のみ - **本番 URL は未登録**
-  (決めたら SPA に追加し、`NEXT_PUBLIC_APP_URL` も合わせる)。
+  SPA リダイレクト URI は `http://localhost:3000/auth/callback` と
+  `https://invoice-portal-app.vercel.app/auth/callback` (本番、2026-11-23 登録)。
+- **本番 (Vercel, 2026-11-23)**: プロジェクト `invoice-portal` (GitHub 連携、`main` への push で自動デプロイ)、
+  URL `https://invoice-portal-app.vercel.app`。Production の環境変数は 9 個 (`.env.example` と同じ、
+  `AZURE_CLIENT_SECRET` は不要)。`NEXT_PUBLIC_APP_URL` / `NEXT_PUBLIC_AZURE_REDIRECT_URI` は本番 URL。
+  URL を変えるときは、この 2 つと Entra の SPA リダイレクト URI の 3 か所を揃え、再デプロイする。
+  Preview URL は Entra に未登録なのでサインインできない。`vercel link` は存在しない名前を渡すと
+  プロジェクトを新規作成するので、`--project invoice-portal` で既存に繋ぐこと。
 - Dataverse 接続先: `https://md-mgd-env3-payg.crm5.dynamics.com` (CAPEX と同じ環境かは未確認)。
 - **API permissions (すべて Delegated)**: Dynamics CRM `user_impersonation` /
   Graph `User.Read`・`User.Read.All`・`Mail.Send`。コードが使う Graph 呼び出しは
