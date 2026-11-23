@@ -11,6 +11,7 @@ import { InvoiceTabs } from "@/components/invoices/InvoiceTabs";
 import { ExcelDropZone } from "@/components/invoices/ExcelDropZone";
 import { NotifyPanel, type NotifyItem } from "@/components/invoices/NotifyPanel";
 import { SavedInvoices } from "@/components/invoices/SavedInvoices";
+import { SheetWarnings } from "@/components/invoices/SheetWarnings";
 import { FIELD, customersFetcher, type Built } from "@/components/invoices/shared";
 import type { Customer } from "@/lib/invoice/customer-record";
 import type { SavedInvoice } from "@/lib/invoice/invoice-record";
@@ -179,6 +180,7 @@ export default function Page() {
             <>
               <GlassCard className="p-4 md:p-6 space-y-4">
                 <h2 className="text-base font-semibold text-[#2D2A28] dark:text-white">2. Review</h2>
+                <SheetWarnings warnings={claim.warnings} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                   <label className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
                     Invoice date (Claim month: {formatMonthLabel(claim.claimMonth)})

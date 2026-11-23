@@ -37,6 +37,8 @@ export interface ParsedPatentRd {
   /** Only claims with something to charge - a 0 produces no invoice. In the order the documents are numbered. */
   lines: PatentRdLine[];
   checks: PatentRdCheck[];
+  /** Things the file could not prove, said in words for the screen (e.g. no Total row to cross-check against). */
+  warnings: string[];
 }
 
 function wholeYen(cells: SheetCells, ref: string, what: string): number {
@@ -51,6 +53,21 @@ function wholeYen(cells: SheetCells, ref: string, what: string): number {
   return v.value;
 }
 
+/**
+ * The row of a "Claim year/month:" label, searched for in the top of the sheet.
+ *
+ * It used to be one fixed cell (`C2` / `D2`), and a row inserted above it would have pointed at
+ * whatever number landed there - and any number between 2000 and 2099 reads as a month. The label
+ * moves with the row; only its column is assumed.
+ */
+function findClaimMonthRef(cells: SheetCells, sheet: string, cols: { label: string; value: string }): string {
+  for (let r = 1; r <= 12; r++) {
+    const label = cells.textOf(`${cols.label}${r}`).replace(/:$/, "").trim().toLowerCase();
+    if (label === "claim year/month") return `${cols.value}${r}`;
+  }
+  throw new SheetReadError(`Could not find "Claim year/month:" in column ${cols.label} of ${sheet}.`);
+}
+
 function monthOf(cells: SheetCells, ref: string, sheet: string): YearMonth {
   const v = cells.valueOf(ref);
   const month = v && v.kind === "number" ? serialToYearMonth(v.value) : null;
@@ -58,17 +75,27 @@ function monthOf(cells: SheetCells, ref: string, sheet: string): YearMonth {
   return month;
 }
 
+/** How far down `readSheet` was asked to read - the heading and the Total row must be inside it. */
+const SHEET_ROWS = 40;
+
 /**
  * **Patent sheet block**: a "Claim amount:" heading in `headingCol`, then one row per entity -
  * the label in `labelCol`, the amount beside it - down to the row labelled `Total`.
- * Found by the heading, not by row number: an entity added to the sheet must not be skipped.
+ * Found by the heading and the Total, not by row number: an entity added to the sheet must not be
+ * skipped.
+ *
+ * **The Total row is looked for first, and every row up to it is read** - a blank row between two
+ * entities used to end the block there, and the entities after it were dropped without a word (and
+ * with no Total reached, with nothing to cross-check them against). A blank label above an amount
+ * is refused rather than guessed at. If there is no Total row at all, the block is read as far as
+ * the first blank label and `warning` says that it could not be cross-checked.
  */
 function readEntityBlock(
   cells: SheetCells,
   sheet: string,
   cols: { heading: string; label: string; amount: string },
   kind: PatentRdKind
-): { lines: PatentRdLine[]; check: PatentRdCheck | null } {
+): { lines: PatentRdLine[]; check: PatentRdCheck | null; warning: string | null } {
   let headingRow = 0;
   for (let r = 1; r <= 30; r++) {
     if (cells.textOf(`${cols.heading}${r}`) === "Claim amount:") {
@@ -78,22 +105,49 @@ function readEntityBlock(
   }
   if (!headingRow) throw new SheetReadError(`Could not find "Claim amount:" in column ${cols.heading} of ${sheet}.`);
 
+  let totalRow = 0;
+  for (let r = headingRow; r <= SHEET_ROWS; r++) {
+    if (cells.textOf(`${cols.label}${r}`) === "Total") {
+      totalRow = r;
+      break;
+    }
+  }
+
   const lines: PatentRdLine[] = [];
-  let r = headingRow;
-  for (; cells.textOf(`${cols.label}${r}`) && cells.textOf(`${cols.label}${r}`) !== "Total"; r++) {
+  const addRow = (r: number) => {
     const claimTo = cells.textOf(`${cols.label}${r}`);
     const amount = wholeYen(cells, `${cols.amount}${r}`, `the amount for ${claimTo}`);
     if (amount > 0) lines.push({ kind, claimTo, amount, description: PATENT_RD_KINDS[kind].description });
+  };
+
+  if (totalRow) {
+    for (let r = headingRow; r < totalRow; r++) {
+      if (cells.textOf(`${cols.label}${r}`)) {
+        addRow(r);
+        continue;
+      }
+      const stray = cells.valueOf(`${cols.amount}${r}`);
+      if (stray && stray.kind === "number" && stray.value !== 0) {
+        throw new SheetReadError(`${sheet}: ${cols.amount}${r} has an amount (${stray.value}) but ${cols.label}${r} has no company name.`);
+      }
+    }
+    const sheetTotal = cells.valueOf(`${cols.amount}${totalRow}`);
+    if (sheetTotal && sheetTotal.kind === "number") {
+      return { lines, check: { kind, sheetTotal: sheetTotal.value, sum: lines.reduce((a, l) => a + l.amount, 0) }, warning: null };
+    }
+    return {
+      lines,
+      check: null,
+      warning: `${sheet}: the Total in ${cols.amount}${totalRow} could not be read as a number, so the ${PATENT_RD_KINDS[kind].label} rows are not cross-checked.`,
+    };
   }
 
-  let check: PatentRdCheck | null = null;
-  if (cells.textOf(`${cols.label}${r}`) === "Total") {
-    const sheetTotal = cells.valueOf(`${cols.amount}${r}`);
-    if (sheetTotal && sheetTotal.kind === "number") {
-      check = { kind, sheetTotal: sheetTotal.value, sum: lines.reduce((a, l) => a + l.amount, 0) };
-    }
-  }
-  return { lines, check };
+  for (let r = headingRow; r <= SHEET_ROWS && cells.textOf(`${cols.label}${r}`); r++) addRow(r);
+  return {
+    lines,
+    check: null,
+    warning: `${sheet}: no "Total" row was found in column ${cols.label}, so the ${PATENT_RD_KINDS[kind].label} rows are not cross-checked. Make sure every company is listed.`,
+  };
 }
 
 /**
@@ -129,11 +183,11 @@ function readSingleBlock(
  * sheets must name the same claim month, or one of them was not updated.
  */
 export async function parsePatentRdWorkbook(file: ArrayBuffer): Promise<ParsedPatentRd> {
-  const rd = await readSheet(file, RD_SHEET_NAME, 40);
-  const patent = await readSheet(file, PATENT_SHEET_NAME, 40);
+  const rd = await readSheet(file, RD_SHEET_NAME, SHEET_ROWS);
+  const patent = await readSheet(file, PATENT_SHEET_NAME, SHEET_ROWS);
 
-  const rdMonth = monthOf(rd, "D2", RD_SHEET_NAME);
-  const patentMonth = monthOf(patent, "C2", PATENT_SHEET_NAME);
+  const rdMonth = monthOf(rd, findClaimMonthRef(rd, RD_SHEET_NAME, { label: "C", value: "D" }), RD_SHEET_NAME);
+  const patentMonth = monthOf(patent, findClaimMonthRef(patent, PATENT_SHEET_NAME, { label: "B", value: "C" }), PATENT_SHEET_NAME);
   if (rdMonth.year !== patentMonth.year || rdMonth.month !== patentMonth.month) {
     throw new SheetReadError(
       `The two sheets are for different months (${RD_SHEET_NAME}: ${rdMonth.year}/${rdMonth.month}, ${PATENT_SHEET_NAME}: ${patentMonth.year}/${patentMonth.month}). Update the Claim year/month in both.`
@@ -152,5 +206,6 @@ export async function parsePatentRdWorkbook(file: ArrayBuffer): Promise<ParsedPa
       ...patentNb.lines,
     ],
     checks: [patentMain.check, patentNb.check].filter((c): c is PatentRdCheck => c !== null),
+    warnings: [patentMain.warning, patentNb.warning].filter((w): w is string => w !== null),
   };
 }

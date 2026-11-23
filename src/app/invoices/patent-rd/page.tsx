@@ -11,6 +11,7 @@ import { InvoiceTabs } from "@/components/invoices/InvoiceTabs";
 import { ExcelDropZone } from "@/components/invoices/ExcelDropZone";
 import { NotifyPanel, type NotifyItem } from "@/components/invoices/NotifyPanel";
 import { SavedInvoices } from "@/components/invoices/SavedInvoices";
+import { SheetWarnings } from "@/components/invoices/SheetWarnings";
 import { FIELD, customersFetcher, type Built } from "@/components/invoices/shared";
 import type { Customer } from "@/lib/invoice/customer-record";
 import type { SavedInvoice } from "@/lib/invoice/invoice-record";
@@ -202,6 +203,8 @@ export default function Page() {
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Numbers are assigned automatically when the invoices are issued (HYM1AC{"{fiscal year}"}-{"{number}"}). Issuing saves them.
                 </p>
+
+                <SheetWarnings warnings={claim.warnings} />
 
                 {claim.lines.length === 0 ? (
                   <p className="text-sm text-slate-600 dark:text-slate-300">Nothing to claim this month (every amount is 0).</p>
