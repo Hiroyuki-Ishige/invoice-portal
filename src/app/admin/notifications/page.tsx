@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { ArrowLeft, Check, Loader2, Save } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { LoadingBlock } from "@/components/ui/Loading";
 import { PRIMARY_ACTION_FILL } from "@/components/ui/Button";
 import { AdminScreenGate, useAdminAccess } from "@/components/admin/AdminScreenGate";
 import { RecipientPicker } from "@/components/admin/RecipientPicker";
@@ -92,7 +93,7 @@ export default function AdminNotificationsPage() {
             </p>
           </div>
 
-          {isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading customers...</p>}
+          {isLoading && <LoadingBlock text="Loading customers..." size={32} className="py-6" />}
           {error && (
             <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               {error.message}

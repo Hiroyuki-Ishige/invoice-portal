@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileSpreadsheet, Loader2, UploadCloud } from "lucide-react";
+import { FileSpreadsheet, UploadCloud } from "lucide-react";
+import { BusyRing } from "@/components/ui/Loading";
 
 interface Props {
   /** Ties the label to the hidden input; unique on the page. */
@@ -63,7 +64,7 @@ export function ExcelDropZone({ id, fileName, reading, onFile }: Props) {
         onChange={(e) => pick(e.target.files?.[0])}
       />
       {reading ? (
-        <Loader2 className="w-8 h-8 animate-spin text-[#0057BC] dark:text-[#00A3DE]" />
+        <BusyRing size={44} />
       ) : (
         <UploadCloud className={`w-8 h-8 transition-transform duration-300 ease-in-out ${dragging ? "-translate-y-1" : ""} text-[#0057BC] dark:text-[#00A3DE]`} />
       )}
