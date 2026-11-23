@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Eye, Loader2, Mail } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -66,6 +66,8 @@ export function NotifyPanel({
    * the default asked for. Keyed `to|company|address` / `cc|company|address`. A company with no To left is skipped.
    */
   const [off, setOff] = useState<Set<string>>(new Set());
+  /** True from the moment Send is pressed to the end of the run - before any row says "sending" (the token is awaited first), so a quick second press cannot start a second run and mail everybody twice. */
+  const running = useRef(false);
 
   const groups = new Map<string, NotifyItem[]>();
   for (const item of items) {
@@ -92,8 +94,10 @@ export function NotifyPanel({
   const choosable = rows.filter((r) => r.to.length > 0 && status[r.key]?.state !== "sent");
   const sendable = choosable.filter((r) => r.toSel.length > 0);
 
+  /* Nothing may be re-ticked while mails are going out: the send reads the ticks as they were when it started. */
   const toggleAddress = (kind: "to" | "cc", company: string, address: string) =>
     setOff((current) => {
+      if (rows.some((r) => status[r.key]?.state === "sending")) return current;
       const next = new Set(current);
       const key = addrKey(kind, company, address);
       if (next.has(key)) next.delete(key);
@@ -103,6 +107,7 @@ export function NotifyPanel({
   /** Tick or untick every address of the given companies at once. */
   const setRows = (targets: Row[], on: boolean) =>
     setOff((current) => {
+      if (rows.some((r) => status[r.key]?.state === "sending")) return current;
       const next = new Set(current);
       for (const row of targets) {
         for (const address of row.to) (on ? next.delete(addrKey("to", row.key, address)) : next.add(addrKey("to", row.key, address)));
@@ -149,6 +154,16 @@ export function NotifyPanel({
   }
 
   async function sendAll() {
+    if (running.current) return;
+    running.current = true;
+    try {
+      await sendRows();
+    } finally {
+      running.current = false;
+    }
+  }
+
+  async function sendRows() {
     const token = await getGraphAccessToken();
     for (const row of sendable) {
       setStatus((s) => ({ ...s, [row.key]: { state: "sending" } }));
@@ -213,10 +228,10 @@ export function NotifyPanel({
           <span className="text-slate-600 dark:text-slate-300">
             {sendable.length} of {choosable.length} {choosable.length === 1 ? "mail" : "mails"} selected
           </span>
-          <button type="button" onClick={() => setRows(choosable, true)} className="text-[#0057BC] dark:text-[#00A3DE] hover:underline">
+          <button type="button" onClick={() => setRows(choosable, true)} disabled={sending} className="text-[#0057BC] dark:text-[#00A3DE] hover:underline disabled:opacity-40 disabled:no-underline">
             Select all
           </button>
-          <button type="button" onClick={() => setRows(choosable, false)} className="text-slate-500 dark:text-slate-400 hover:underline">
+          <button type="button" onClick={() => setRows(choosable, false)} disabled={sending} className="text-slate-500 dark:text-slate-400 hover:underline disabled:opacity-40 disabled:no-underline">
             Select none
           </button>
         </div>
@@ -235,7 +250,7 @@ export function NotifyPanel({
                       aria-label={`Send the mail to ${row.list[0].invoice.customerName}`}
                       className="mr-2 w-4 h-4 align-[-2px] accent-[#0057BC]"
                       checked={row.toSel.length > 0}
-                      disabled={st.state === "sending"}
+                      disabled={sending}
                       onChange={(e) => setRows([row], e.target.checked)}
                     />
                   )}
@@ -276,7 +291,7 @@ export function NotifyPanel({
                                 type="checkbox"
                                 className="w-4 h-4 accent-[#0057BC]"
                                 checked={!off.has(addrKey(kind, row.key, address))}
-                                disabled={st.state === "sending"}
+                                disabled={sending}
                                 onChange={() => toggleAddress(kind, row.key, address)}
                               />
                             )}

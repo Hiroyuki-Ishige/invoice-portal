@@ -41,6 +41,9 @@ export function SavedInvoices() {
   const [message, setMessage] = useState("");
   const [cancelling, setCancelling] = useState<SavedInvoice | null>(null);
   const [reason, setReason] = useState("");
+  /** Cancelling the ticked invoices together: the dialog is open, and how far the run has got. */
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
   const { data, error, isLoading } = useSWR(ISSUED_KEY, invoicesFetcher, { revalidateOnFocus: false });
   const { data: cancelledData, error: cancelledError } = useSWR(CANCELLED_KEY, invoicesFetcher, { revalidateOnFocus: false });
@@ -118,6 +121,53 @@ export function SavedInvoices() {
     }
   }
 
+  /** The ticked invoices that can still be cancelled, in number order. */
+  const pickedIssued = (data?.invoices ?? [])
+    .filter((i) => selected.has(i.id) && i.status === "issued")
+    .sort((a, b) => a.number.localeCompare(b.number));
+
+  /**
+   * Cancel every ticked invoice with the one reason, **one request each** (the same endpoint, the same checks and
+   * the same "only an issued invoice" rule as a single cancel). A failure does not stop the rest; the ones that
+   * failed stay ticked and are named, so the person can see what is left and try again.
+   */
+  async function confirmBulkCancel() {
+    if (!reason.trim() || pickedIssued.length === 0) return;
+    const targets = pickedIssued;
+    setMessage("");
+    setBulkProgress({ done: 0, total: targets.length });
+    const failed: string[] = [];
+    const cancelled = new Set<string>();
+    for (const [index, invoice] of targets.entries()) {
+      try {
+        const response = await fetch(`/api/invoices/${invoice.id}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || `status ${response.status}`);
+        cancelled.add(invoice.id);
+      } catch (e) {
+        failed.push(`${invoice.number}: ${e instanceof Error ? e.message : "could not be cancelled"}`);
+      }
+      setBulkProgress({ done: index + 1, total: targets.length });
+    }
+    try {
+      await Promise.all([mutate(ISSUED_KEY), mutate(CANCELLED_KEY)]);
+    } finally {
+      // Whatever the re-read did, the dialog must come back: it is locked while a run is in progress.
+      setSelected((current) => new Set([...current].filter((id) => !cancelled.has(id))));
+      if (cancelled.size > 0) setNotifyItems(null);
+      setBulkProgress(null);
+      setBulkOpen(false);
+      setReason("");
+      if (failed.length > 0) {
+        setMessage(`${cancelled.size} cancelled, ${failed.length} could not be: ${failed.join("; ")}`);
+      }
+    }
+  }
+
   async function confirmCancel() {
     if (!cancelling || !reason.trim()) return;
     setBusyId(cancelling.id);
@@ -179,6 +229,21 @@ export function SavedInvoices() {
             {preparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
             Send completion notice
           </button>
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => {
+                setBulkOpen(true);
+                setReason("");
+                setMessage("");
+              }}
+              disabled={pickedIssued.length === 0}
+              className="inline-flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium hover:underline disabled:opacity-40 disabled:no-underline"
+            >
+              <Ban className="w-4 h-4" />
+              Cancel selected
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -406,6 +471,65 @@ export function SavedInvoices() {
           </div>
         )}
       </div>
+
+      {bulkOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-[fadeIn_0.3s_ease-in-out] px-3">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Cancel the selected invoices"
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 space-y-3 animate-[popIn_0.3s_ease-in-out]"
+          >
+            <h3 className="text-lg font-semibold text-[#2D2A28] dark:text-white">
+              Cancel {bulkProgress?.total ?? pickedIssued.length} {(bulkProgress?.total ?? pickedIssued.length) === 1 ? "invoice" : "invoices"}?
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Each number stays on record as Cancelled and is not used again. One reason is recorded for all of them.
+            </p>
+            <ul className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm tabular-nums text-slate-700 dark:text-slate-200 space-y-0.5">
+              {pickedIssued.map((invoice) => (
+                <li key={invoice.id}>
+                  {invoice.number} <span className="text-slate-500 dark:text-slate-400">- {invoice.customerName}, ¥{formatAmount(invoice.total, 0)}</span>
+                </li>
+              ))}
+            </ul>
+            <textarea
+              className={`${FIELD} w-full`}
+              rows={3}
+              maxLength={1000}
+              aria-label="Reason for cancelling"
+              autoFocus
+              value={reason}
+              disabled={bulkProgress !== null}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <div className="flex items-center justify-end gap-3">
+              {bulkProgress && (
+                <span className="mr-auto text-sm text-slate-500 dark:text-slate-400">
+                  Cancelling {bulkProgress.done} of {bulkProgress.total}...
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setBulkOpen(false)}
+                disabled={bulkProgress !== null}
+                className="px-4 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+              >
+                Keep invoices
+              </button>
+              <button
+                type="button"
+                onClick={confirmBulkCancel}
+                disabled={!reason.trim() || pickedIssued.length === 0 || bulkProgress !== null}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-red-600 text-white disabled:opacity-50"
+              >
+                {bulkProgress && <Loader2 className="w-4 h-4 animate-spin" />}
+                Cancel {bulkProgress?.total ?? pickedIssued.length} {(bulkProgress?.total ?? pickedIssued.length) === 1 ? "invoice" : "invoices"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {cancelling && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-[fadeIn_0.3s_ease-in-out] px-3">
