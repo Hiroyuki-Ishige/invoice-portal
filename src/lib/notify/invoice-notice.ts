@@ -29,6 +29,8 @@ export interface InvoiceNoticeInput {
   attached: boolean;
   /** Who is sending - the person who issued. */
   senderName: string;
+  /** `window.location.origin` - the link has to point at the deployment in use. */
+  origin: string;
 }
 
 /**
@@ -62,6 +64,9 @@ export function buildInvoiceNotice(input: InvoiceNoticeInput): { subject: string
   const subject = NOTICE_TEST_MODE ? `[TEST] ${baseSubject}` : baseSubject;
 
   const many = input.invoices.length > 1;
+  // The scheme is checked, then the URL escaped - see `invite-mail.ts`. The path is a literal.
+  const origin = /^https?:\/\//i.test(input.origin) ? input.origin : "";
+  const portalLink = escapeHtml(`${origin}/invoices`);
   const rows = input.invoices
     .map(
       (line) => `
@@ -89,6 +94,10 @@ export function buildInvoiceNotice(input: InvoiceNoticeInput): { subject: string
       <p style="margin:0">
         HOYA CORPORATION MD Section Accounting has issued ${many ? "the following invoices" : "the following invoice"}
         to ${escapeHtml(input.customerName)}${input.attached ? `. The PDF${many ? "s are" : " is"} attached.` : "."}
+      </p>
+      <p style="margin:12px 0 0">
+        You can also see ${many ? "these invoices" : "this invoice"} in Invoice Portal: sign in with your Microsoft 365 account.
+        You will see only the invoices of the companies registered to you.
       </p>`,
     facts: [
       { label: "Invoice date", value: date },
@@ -96,7 +105,9 @@ export function buildInvoiceNotice(input: InvoiceNoticeInput): { subject: string
       { label: "Total", value: `¥${formatAmount(total, 0)}`, strong: true },
     ],
     appendixHtml,
-    footnote: `Sent from Invoice Portal by ${input.senderName}. Replying to this message will reach the sender, not the app.`,
+    ctaLabel: "Open Invoice Portal",
+    ctaHref: portalLink,
+    footnote: `Sent from Invoice Portal by ${input.senderName}. If you cannot sign in, ask the sender to register you. Replying to this message will reach the sender, not the app.`,
   });
   return { subject, html };
 }

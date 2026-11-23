@@ -121,6 +121,11 @@ export default function AdminGuidePage() {
                 If a mail fails, the person is still registered: use Send App Link.
               </li>
               <li>
+                <strong>Companies (for a User):</strong> a User sees only the invoices of the companies ticked for them. Tick them when you
+                register the person, or later with Companies on their row. Admin and F&amp;A Admin see every company. A User with none ticked
+                sees no invoice.
+              </li>
+              <li>
                 The invitation mail links to the sign-in (MFA) guide with pictures, in English and Japanese. You can open it yourself:{" "}
                 <Link href="/guide/mfa" className="text-[#0057BC] dark:text-[#00A3DE] underline">
                   English

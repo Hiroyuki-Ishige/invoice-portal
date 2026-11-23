@@ -83,6 +83,7 @@ export function NotifyPanel({
       invoiceDate: first.invoiceDate,
       monthLabel: first.monthLabel,
       senderName,
+      origin: window.location.origin,
       invoices: list.map(({ invoice, description }) => ({
         number: invoice.number,
         title: invoice.title,

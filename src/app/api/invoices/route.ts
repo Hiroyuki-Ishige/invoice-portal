@@ -17,7 +17,8 @@ import {
   queryDataverseAll,
 } from "@/lib/providers/dataverse/client";
 import { getNavigationPropertyNames } from "@/lib/providers/dataverse/navigation-properties";
-import { areaDeniedResponse, checkArea } from "@/lib/auth/require-signed-in";
+import { areaDeniedResponse, checkArea, deniedResponse } from "@/lib/auth/require-signed-in";
+import { invoiceScopeOfCaller, scopeAllows, scopeFilter } from "@/lib/auth/invoice-scope";
 import { CUSTOMER_ENTITY_SET, mapDataverseToCustomer } from "@/lib/invoice/customer-record";
 import { fiscalYearOf } from "@/lib/invoice/dates";
 import { formatInvoiceNumber } from "@/lib/invoice/invoice-number";
@@ -49,13 +50,22 @@ export async function GET(request: NextRequest) {
     const status = request.nextUrl.searchParams.get("status");
     const statusValue = status && status in STATUS_VALUES ? STATUS_VALUES[status as keyof typeof STATUS_VALUES] : null;
 
+    // A User sees only the companies registered to them; Admin and F&A Admin see all (`invoice-scope.ts`).
+    const scope = await invoiceScopeOfCaller();
+    if (!scope) return deniedResponse("not_permitted");
+    if (!scope.all && scope.codes.length === 0) return NextResponse.json({ invoices: [], truncated: false, limit: LIST_LIMIT });
+    const conditions = [
+      statusValue === null ? null : `${INVOICE_FIELDS.status} eq ${statusValue}`,
+      scopeFilter(scope, INVOICE_FIELDS.customerCode),
+    ].filter((c): c is string => c !== null);
+
     // One more than shown, to know whether the list was cut off.
     const records = await queryDataverseAll<Record<string, unknown>>(token, INVOICE_ENTITY_SET, {
-      filter: statusValue === null ? undefined : `${INVOICE_FIELDS.status} eq ${statusValue}`,
+      filter: conditions.length > 0 ? conditions.join(" and ") : undefined,
       orderby: `${INVOICE_FIELDS.fiscalYear} desc,${INVOICE_FIELDS.sequence} desc`,
       top: LIST_LIMIT + 1,
     });
-    const invoices = records.slice(0, LIST_LIMIT).map(mapDataverseToInvoice);
+    const invoices = records.slice(0, LIST_LIMIT).map(mapDataverseToInvoice).filter((i) => scopeAllows(scope, i.customerCode));
     return NextResponse.json({ invoices, truncated: records.length > LIST_LIMIT, limit: LIST_LIMIT });
   } catch (error) {
     return handleApiError(error, "Invoices API GET");
@@ -66,6 +76,13 @@ export async function POST(request: NextRequest) {
   try {
     const check = await checkArea("invoices", "edit");
     if (!check.user) return areaDeniedResponse(check);
+    // Issuing is for those who see every company (Admin, F&A Admin). A User given Edit in Role Permissions
+    // still sees only their own companies, so must not issue documents addressed to others.
+    const scope = await invoiceScopeOfCaller();
+    if (!scope) return deniedResponse("not_permitted");
+    if (!scope.all) {
+      return NextResponse.json({ error: "Only an Admin or F&A Admin may issue invoices.", code: "ROLE_PERMISSION" }, { status: 403 });
+    }
     const token = (await cookies()).get(DATAVERSE_COOKIES.ACCESS_TOKEN)!.value;
 
     const parsed = validateIssueRequest(await request.json().catch(() => null));
