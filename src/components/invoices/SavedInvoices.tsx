@@ -7,7 +7,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { mayCancelInvoices } from "@/lib/types/user-profile";
 import { STATUS_LABELS, type SavedInvoice } from "@/lib/invoice/invoice-record";
-import { formatAmount } from "@/lib/utils/format";
+import { formatAmount, localStamp } from "@/lib/utils/format";
 import { renderPdf, saveBlob } from "@/lib/invoice/render-pdf";
 import { FIELD, customersFetcher } from "./shared";
 import { NotifyPanel, type NotifyItem } from "./NotifyPanel";
@@ -258,7 +258,7 @@ export function SavedInvoices() {
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[800px] text-sm">
+        <table className="w-full min-w-[920px] text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
               <th className="py-2 pr-2 w-8">
@@ -284,6 +284,7 @@ export function SavedInvoices() {
               <th className="py-2 pr-3 font-semibold">Title</th>
               <th className="py-2 pr-3 font-semibold">Customer</th>
               <th className="py-2 pr-3 font-semibold">Date</th>
+              <th className="py-2 pr-3 font-semibold whitespace-nowrap">Created</th>
               <th className="py-2 pr-3 font-semibold text-right">Amount (JPY)</th>
               <th className="py-2 pr-3 font-semibold">Status</th>
               <th className="py-2 font-semibold">
@@ -309,6 +310,9 @@ export function SavedInvoices() {
                 <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.title}</td>
                 <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.customerName}</td>
                 <td className="py-2 pr-3 tabular-nums text-slate-600 dark:text-slate-300">{invoice.invoiceDate}</td>
+                <td className="py-2 pr-3 tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-300" title={invoice.createdBy ? `Created by ${invoice.createdBy}` : undefined}>
+                  {localStamp(invoice.createdOn) || "-"}
+                </td>
                 <td className="py-2 pr-3 text-right tabular-nums">¥{formatAmount(invoice.total, 0)}</td>
                 <td className="py-2 pr-3" title={invoice.status === "cancelled" ? invoice.cancelReason : undefined}>
                   {/* Filled when it stands, outlined when it does not - one hue (rule 33). */}
@@ -360,7 +364,7 @@ export function SavedInvoices() {
             ))}
             {!isLoading && !error && shown.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-6 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={9} className="py-6 text-center text-slate-500 dark:text-slate-400">
                   {data?.invoices.length ? "No invoice matches the search." : "No invoice has been issued yet."}
                 </td>
               </tr>
@@ -410,13 +414,15 @@ export function SavedInvoices() {
               </p>
             )}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] text-sm">
+              <table className="w-full min-w-[1040px] text-sm">
                 <thead>
                   <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                     <th className="py-2 pr-3 font-semibold">Number</th>
                     <th className="py-2 pr-3 font-semibold">Title</th>
                     <th className="py-2 pr-3 font-semibold">Customer</th>
                     <th className="py-2 pr-3 font-semibold">Date</th>
+                    <th className="py-2 pr-3 font-semibold whitespace-nowrap">Created</th>
+                    <th className="py-2 pr-3 font-semibold whitespace-nowrap">Cancelled</th>
                     <th className="py-2 pr-3 font-semibold text-right">Amount (JPY)</th>
                     <th className="py-2 pr-3 font-semibold">Reason</th>
                     <th className="py-2 font-semibold">
@@ -431,6 +437,10 @@ export function SavedInvoices() {
                       <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.title}</td>
                       <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{invoice.customerName}</td>
                       <td className="py-2 pr-3 tabular-nums text-slate-600 dark:text-slate-300">{invoice.invoiceDate}</td>
+                      <td className="py-2 pr-3 tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-300" title={invoice.createdBy ? `Created by ${invoice.createdBy}` : undefined}>
+                        {localStamp(invoice.createdOn) || "-"}
+                      </td>
+                      <td className="py-2 pr-3 tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-300">{localStamp(invoice.modifiedOn) || "-"}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">¥{formatAmount(invoice.total, 0)}</td>
                       <td className="py-2 pr-3 text-slate-600 dark:text-slate-300 max-w-[16rem] break-words">{invoice.cancelReason || "-"}</td>
                       <td className="py-2 whitespace-nowrap">
@@ -457,7 +467,7 @@ export function SavedInvoices() {
                   ))}
                   {cancelledData && cancelledShown.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="py-6 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={9} className="py-6 text-center text-slate-500 dark:text-slate-400">
                         {cancelledData.invoices.length ? "No cancelled invoice matches the search." : "No invoice has been cancelled."}
                       </td>
                     </tr>
