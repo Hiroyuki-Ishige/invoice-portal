@@ -46,6 +46,8 @@ export default function Page() {
   const [dateText, setDateText] = useState("");
   const [titles, setTitles] = useState<Record<string, DocumentTitle>>({});
   const [building, setBuilding] = useState(false);
+  /** Set once something has been issued from the file on screen; a new file starts over. The Issue button stays off until then (a second press would take new numbers for the same documents). */
+  const [issuedDone, setIssuedDone] = useState(false);
   const [issueFailures, setIssueFailures] = useState<string[]>([]);
   const [numbers, setNumbers] = useState<Record<string, string>>({});
   const [built, setBuilt] = useState<Record<string, Built>>({});
@@ -68,6 +70,7 @@ export default function Page() {
 
   async function onFile(file: File) {
     setError("");
+    setIssuedDone(false);
     setClaim(null);
     clearBuilt();
     setFileName(file.name);
@@ -91,7 +94,7 @@ export default function Page() {
   // What was chosen on this screen, else the customer's default (Admin > Customers).
   const titleOf = (row: { line: { claimTo: string }; customer?: Customer }): DocumentTitle =>
     titles[row.line.claimTo] || row.customer?.defaultTitles.expense || "INVOICE";
-  const canBuild = !!claim && !!date && creatable.length > 0 && !building;
+  const canBuild = !!claim && !!date && creatable.length > 0 && !building && !issuedDone;
   const sum = claim ? claim.lines.reduce((a, l) => a + l.amount, 0) : 0;
 
   async function build() {
@@ -121,6 +124,7 @@ export default function Page() {
         return;
       }
       const issued = (data.invoices ?? []) as SavedInvoice[];
+      if (issued.length > 0) setIssuedDone(true);
       setIssueFailures(((data.failed ?? []) as Array<{ claimTo: string; error: string }>).map((f) => `${f.claimTo}: ${f.error}`));
 
       const next: Record<string, Built> = {};
@@ -215,7 +219,8 @@ export default function Page() {
                     Invoice date (Claim month: {formatMonthLabel(claim.claimMonth)})
                     <input
                       type="date"
-                      className={FIELD}
+                      className={`${FIELD} disabled:opacity-50`}
+                      disabled={issuedDone}
                       value={dateText}
                       onChange={(e) => {
                         setDateText(e.target.value);
@@ -265,7 +270,8 @@ export default function Page() {
                           <td className="py-2 pr-3">
                             {customer && (
                               <select
-                                className={FIELD}
+                                className={`${FIELD} disabled:opacity-50`}
+                                disabled={issuedDone}
                                 aria-label={`Title for ${line.claimTo}`}
                                 value={titleOf({ line, customer })}
                                 onChange={(e) => {
@@ -340,7 +346,7 @@ export default function Page() {
                   className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold transition-colors duration-300 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed ${PRIMARY_ACTION_FILL}`}
                 >
                   {building && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {building ? "Issuing..." : "Issue invoices"}
+                  {building ? "Issuing..." : issuedDone ? "Issued" : "Issue invoices"}
                 </button>
                 {issueFailures.length > 0 && (
                   <p role="alert" className="w-full text-sm text-red-600 dark:text-red-400">
@@ -349,7 +355,9 @@ export default function Page() {
                 )}
                 {!canBuild && !building && (
                   <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {!date
+                    {issuedDone
+                      ? "These invoices are issued. Upload the next file to issue more."
+                      : !date
                       ? "Enter the invoice date."
                       : "No row has a registered customer."}
                   </span>
