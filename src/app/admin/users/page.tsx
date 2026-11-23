@@ -12,6 +12,7 @@ import {
   Mail,
   Calendar,
   Send,
+  Eye,
   UserPlus,
   ToggleLeft,
   ToggleRight,
@@ -24,6 +25,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { UserSearchSelect, type Office365User } from "@/components/ui/UserSearchSelect";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { RoleBadge } from "@/components/ui/RoleBadge";
+import { InvitePreviewModal, type InvitePreviewInput } from "@/components/admin/InvitePreviewModal";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { BusyRing, LoadingBlock } from "@/components/ui/Loading";
 import {
@@ -107,6 +109,8 @@ export default function AdminUsersPage() {
    * read the one panel that matters as decoration.
    */
   const [sent, setSent] = useState<string | null>(null);
+  /** The invitation mail being previewed (nothing is sent), if the dialog is open. */
+  const [preview, setPreview] = useState<InvitePreviewInput | null>(null);
 
   /**
    * The `dv_*` cookies are written when AuthProvider initialises, while MSAL
@@ -213,7 +217,6 @@ export default function AdminUsersPage() {
       displayName: string;
       email: string;
       role: UserRole;
-      entityAccess?: EntityAccess;
     }): Promise<{ ok: boolean; message: string }> => {
       try {
         const msal = await import("@/lib/providers/dataverse/msal-browser");
@@ -223,7 +226,6 @@ export default function AdminUsersPage() {
             displayName: user.displayName,
             email: user.email,
             role: user.role,
-            entityAccess: user.entityAccess ?? NO_ENTITY_ACCESS,
             invitedBy: userProfile?.displayName || userProfile?.email || "",
           },
           graphToken
@@ -264,14 +266,16 @@ export default function AdminUsersPage() {
   };
 
   /**
-   * Create the profile and mail the invitation.
+   * Create the profile, and - when `sendMail` is true - mail the invitation.
+   *
+   * Register (`false`) only creates the profile; the mail can be sent later from the row's Send App Link.
    *
    * The invitation goes out from the browser: the POST runs on the server, where there is
    * no delegated Graph token to send `/me/mail` with. Its outcome is waited for so it can be
    * reported - but its failure is a notice, never an error, because the profile already
-   * exists and pressing Send Invitation again would be refused as a duplicate.
+   * exists and pressing Register & Send Invitation again would be refused as a duplicate.
    */
-  const handleInvitePerson = async () => {
+  const handleInvitePerson = async (sendMail: boolean) => {
     setIsSaving(true);
     setNotice(null);
     setSent(null);
@@ -286,6 +290,14 @@ export default function AdminUsersPage() {
       if (!response.ok) throw new Error(data.error || "Failed to create user");
 
       // Alongside the re-read rather than before it: they share nothing.
+      if (!sendMail) {
+        // Registered only: the mail can be sent later from the row's Send App Link.
+        await fetchUsers();
+        setNotice(data.warning || null);
+        setSent(`${formData.email} is registered. No invitation was sent - use Send App Link on their row when you are ready.`);
+        setFormData(EMPTY_FORM);
+        return;
+      }
       const [invite] = await Promise.all([announceInvite(data.user), fetchUsers()]);
       const warnings = [data.warning, invite.ok ? null : invite.message].filter(Boolean) as string[];
       setNotice(warnings.length > 0 ? warnings.join(" ") : null);
@@ -390,6 +402,13 @@ export default function AdminUsersPage() {
   if (access !== "allowed") return <AdminScreenGate state={access} need="admin-users" />;
 
   const canInvite = !!formData.email && !!formData.displayName && !isSaving;
+  /** What the preview shows: the picked person, or a stand-in until somebody is picked. */
+  const previewOf = (displayName: string, email: string, role: UserRole): InvitePreviewInput => ({
+    displayName: displayName || "Taro Yamada",
+    email: email || "taro.yamada@example.com",
+    role,
+    invitedBy: userProfile?.displayName || userProfile?.email || "",
+  });
   const pickedPerson: Office365User | null = formData.displayName
     ? { id: "", displayName: formData.displayName, mail: formData.email || null, jobTitle: formData.jobTitle || null }
     : null;
@@ -532,15 +551,34 @@ export default function AdminUsersPage() {
               </div>
             </fieldset>
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
               <button
                 type="button"
-                onClick={handleInvitePerson}
+                onClick={() => setPreview(previewOf(formData.displayName, formData.email, formData.role))}
+                className="flex items-center gap-2 px-5 py-3 rounded-full font-semibold border border-[#0057BC] text-[#0057BC] dark:border-[#00A3DE] dark:text-[#00A3DE] hover:bg-[#0057BC]/5 dark:hover:bg-[#00A3DE]/10 transition-all duration-300 ease-in-out"
+              >
+                <Eye className="w-5 h-5" aria-hidden="true" />
+                Preview Invitation
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInvitePerson(false)}
                 disabled={!canInvite}
+                title="Create the profile only; no mail is sent"
+                className="flex items-center gap-2 px-5 py-3 rounded-full font-semibold border border-[#0057BC] text-[#0057BC] dark:border-[#00A3DE] dark:text-[#00A3DE] hover:bg-[#0057BC]/5 dark:hover:bg-[#00A3DE]/10 transition-all duration-300 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <UserPlus className="w-5 h-5" aria-hidden="true" />
+                Register
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInvitePerson(true)}
+                disabled={!canInvite}
+                title="Create the profile and email the invitation"
                 className="flex items-center gap-2 px-6 py-3 bg-[#0057BC] text-white rounded-full font-semibold hover:bg-[#004494] transition-all duration-300 ease-in-out disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {isSaving ? <BusyRing size={22} /> : <UserPlus className="w-5 h-5" aria-hidden="true" />}
-                {isSaving ? "Sending..." : "Send Invitation"}
+                {isSaving ? <BusyRing size={22} /> : <Send className="w-5 h-5" aria-hidden="true" />}
+                {isSaving ? "Working..." : "Register & Send Invitation"}
               </button>
             </div>
           </GlassCard>
@@ -662,6 +700,15 @@ export default function AdminUsersPage() {
 
                       {/* Actions */}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 md:justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setPreview(previewOf(user.displayName, user.email, user.role))}
+                          title="See the invitation mail this person gets"
+                          className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-[#0057BC] dark:hover:text-[#00A3DE] transition-colors duration-300 ease-in-out"
+                        >
+                          <Eye className="w-4 h-4" aria-hidden="true" />
+                          Preview
+                        </button>
                         {user.isActive && (
                           <button
                             type="button"
@@ -711,6 +758,8 @@ export default function AdminUsersPage() {
           </GlassCard>
         </div>
       </main>
+
+      {preview && <InvitePreviewModal input={preview} onClose={() => setPreview(null)} />}
 
       {/* The app's one delete dialog - the record's name has to be typed.
           Warned about here rather than after the fact. The screen cannot ask

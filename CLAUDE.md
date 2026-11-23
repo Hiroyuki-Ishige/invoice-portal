@@ -18,6 +18,8 @@ Excel 読込、`build-pdf` = PDF、`invoice-number` = `HYM1AC{会計年度}-{連
 Dataverse の選択肢は残したまま `getRoleName` が User と読む。Admin > Setup の Top up が、その値の行を User に書き換え、
 F&A-Admin の選択肢名を F&A Admin に直す (`migrateRetiredRoles`)。User Management (`/admin/users`) は 1 列・2 カード
 (Invite New User / All Users) に作り直した。
+**Dataverse の権限は Entra グループ方式 (2026-11-23)**: `Invoice Portal Editors` (Admin / F&A Admin) と `Invoice Portal Readers` (User) を
+Dataverse のチームにし、セキュリティロール `Invoice Portal Editor` / `Reader` (+ `Basic User`) を付けた。ユーザーの追加手順は `docs/admin-manual.md`。
 テーブルは Admin > Setup の「Invoice tables」、年度ごとの最終番号は「Invoice numbers」で設定。設計: `docs/invoice-design.md`。
 テーブルの作成先ソリューションは環境変数 `DATAVERSE_SOLUTION` (`InvoicePortal`)。未設定なら既定ソリューションに入る。
 **取引先マスタ**: Admin > Customers (`/admin/customers`, 行 `admin-customers`) で登録し、Dataverse の `hi_invoicecustomer`

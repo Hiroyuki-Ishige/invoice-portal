@@ -73,7 +73,9 @@ function refusalOf(status: ProfileStatus): AccessDeniedReason | null {
  * and a right one signed into, which for somebody registered under their other
  * address is the actual fix.
  */
-const ALWAYS_OPEN = ["/sign-in", "/auth"];
+/* `/guide/mfa` is a static public document (the invitation mail links to it); name the page, not the folder,
+   so a later screen under `/guide` is not opened by accident. */
+const ALWAYS_OPEN = ["/sign-in", "/auth", "/guide/mfa"];
 
 export function AccountGate({ children }: { children: ReactNode }) {
   const { isAuthenticated, profileStatus } = useAuth();
