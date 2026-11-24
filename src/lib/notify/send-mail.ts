@@ -253,7 +253,9 @@ export async function sendGraphMail(
  */
 export async function sendInvitation(
   invite: Omit<InviteMessageInput, "origin">,
-  graphToken: string | null
+  graphToken: string | null,
+  /** Copied in - the admin pressing the button, so they keep a copy in their own inbox. */
+  cc: Array<{ name: string; email: string }> = []
 ): Promise<SendOutcome> {
   const { subject, html } = buildInviteMessage({ ...invite, origin: window.location.origin });
   return sendGraphMail(
@@ -261,6 +263,7 @@ export async function sendInvitation(
       subject,
       html,
       to: [{ name: invite.displayName || invite.email, email: invite.email }],
+      cc,
       subjectPrefix: APP_SUBJECT_PREFIX,
     },
     graphToken
