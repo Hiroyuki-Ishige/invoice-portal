@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { sendInvitation } from "@/lib/notify/send-mail";
+import { MailSentModal } from "@/components/ui/MailSentModal";
 import { Header } from "@/components/ui/Header";
 import { AdminScreenGate, useAdminAccess } from "@/components/admin/AdminScreenGate";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -166,6 +167,8 @@ export default function AdminUsersPage() {
    * read the one panel that matters as decoration.
    */
   const [sent, setSent] = useState<string | null>(null);
+  /** The "invitation sent" popup: who it went to and who was copied, while it is open. */
+  const [sentDialog, setSentDialog] = useState<{ to: string; cc?: string; note?: string } | null>(null);
   /** The invitation mail being previewed (nothing is sent), if the dialog is open. */
   const [preview, setPreview] = useState<InvitePreviewInput | null>(null);
   /** The user whose companies are being edited, if the dialog is open. */
@@ -281,10 +284,12 @@ export default function AdminUsersPage() {
       displayName: string;
       email: string;
       role: UserRole;
-    }): Promise<{ ok: boolean; message: string }> => {
+    }): Promise<{ ok: boolean; message: string; dialog?: { to: string; cc?: string; note?: string } }> => {
       try {
         const msal = await import("@/lib/providers/dataverse/msal-browser");
         const graphToken = await msal.getGraphMailToken();
+        const senderEmail = userProfile?.email ?? "";
+        const copyTo = senderEmail && senderEmail.toLowerCase() !== user.email.toLowerCase() ? senderEmail : "";
         const outcome = await sendInvitation(
           {
             displayName: user.displayName,
@@ -292,14 +297,20 @@ export default function AdminUsersPage() {
             role: user.role,
             invitedBy: userProfile?.displayName || userProfile?.email || "",
           },
-          graphToken
+          graphToken,
+          // The admin pressing the button is copied, unless they are the one being invited.
+          copyTo ? [{ name: userProfile?.displayName || copyTo, email: copyTo }] : []
         );
         // `sent`, not `problem` - `sendGraphMail` can report both at once, and
         // reading `problem` alone turns a delivered message into a failure.
         if (outcome.sent === 0) {
           return { ok: false, message: outcome.problem ?? "The invitation was not sent." };
         }
-        return { ok: true, message: `Invitation sent to ${user.email}.` };
+        return {
+          ok: true,
+          message: `Invitation sent to ${user.email}.`,
+          dialog: { to: user.email, cc: copyTo || undefined, note: outcome.problem },
+        };
       } catch {
         // `user?.email`, not `user.email`: this catch runs for anything the try
         // threw, and a `user` that arrived without the fields would throw here
@@ -324,7 +335,7 @@ export default function AdminUsersPage() {
     setSent(null);
     setNotice(null);
     const result = await announceInvite(user);
-    if (result.ok) setSent(result.message);
+    if (result.ok) setSentDialog(result.dialog ?? { to: user.email });
     else setNotice(result.message);
     setInvitingId(null);
   };
@@ -372,7 +383,8 @@ export default function AdminUsersPage() {
       const [invite] = await Promise.all([announceInvite(data.user), fetchUsers()]);
       const warnings = [data.warning, invite.ok ? null : invite.message].filter(Boolean) as string[];
       setNotice(warnings.length > 0 ? warnings.join(" ") : null);
-      setSent(invite.ok ? invite.message : null);
+      setSent(null);
+      if (invite.ok) setSentDialog(invite.dialog ?? { to: data.user.email });
       setFormData(EMPTY_FORM);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -890,6 +902,7 @@ export default function AdminUsersPage() {
           onClose={() => setCompaniesFor(null)}
         />
       )}
+      {sentDialog && <MailSentModal title="Invitation sent" {...sentDialog} onClose={() => setSentDialog(null)} />}
       {preview && <InvitePreviewModal input={preview} onClose={() => setPreview(null)} />}
 
       {/* The app's one delete dialog - the record's name has to be typed.
