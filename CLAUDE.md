@@ -64,7 +64,7 @@ Azure AD / MSAL.js · Lucide · SWR · isomorphic-dompurify · jsPDF + autotable
 
 - Invoice Portal 用アプリ登録済み (HOYA Corporation テナント、シングルテナント)。
   Client ID `a20ad64f-24cb-4c99-a6c2-320611d971f8` / Tenant ID `bf781f77-403a-41b0-bc8d-aef742fcc54e`。
-  SPA リダイレクト URI は `http://localhost:3000/auth/callback` と
+  SPA リダイレクト URI は `http://localhost:3000/auth/callback` (ローカルは 2026-11-25 から 3002 に変更。`http://localhost:3002/auth/callback` の登録が必要) と
   `https://invoice-portal-app.vercel.app/auth/callback` (本番、2026-11-23 登録)。
 - **本番 (Vercel, 2026-11-23)**: プロジェクト `invoice-portal` (GitHub 連携、`main` への push で自動デプロイ)、
   URL `https://invoice-portal-app.vercel.app`。Production の環境変数は 9 個 (`.env.example` と同じ、
