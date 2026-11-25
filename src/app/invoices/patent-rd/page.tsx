@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import useSWR, { mutate } from "swr";
 import { Download, FileSearch, Loader2 } from "lucide-react";
@@ -57,6 +58,8 @@ export default function Page() {
 
   // Object URLs hold the file in memory until they are let go.
   const builtRef = useRef(built);
+  /** The mail step that appears below after issuing - scrolled to, because issuing sends nothing by itself. */
+  const notifyRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     builtRef.current = built;
   }, [built]);
@@ -174,7 +177,8 @@ export default function Page() {
       }
       setBuilt(nextBuilt);
       setNumbers(nextNumbers);
-      setNotifyItems(nextNotify);
+      flushSync(() => setNotifyItems(nextNotify));
+      if (nextNotify.length > 0) notifyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       await mutate("/api/invoices?status=");
     } catch {
       setError("Something went wrong while issuing the invoices. Check the list below before trying again.");
@@ -374,7 +378,7 @@ export default function Page() {
                 {!canBuild && !building && (
                   <span className="text-xs text-slate-500 dark:text-slate-400">
                     {issuedDone
-                      ? "These invoices are issued. Upload the next file to issue more."
+                      ? "Issued. No mail has been sent yet - send the notices in step 3 below."
                       : !date
                       ? "Enter the invoice date."
                       : "No row has a registered customer."}
@@ -385,7 +389,9 @@ export default function Page() {
           )}
 
           {notifyItems.length > 0 && (
-            <NotifyPanel key={notifyItems.map((i) => i.invoice.id).join()} items={notifyItems} customers={customerData?.customers ?? []} />
+            <div ref={notifyRef} className="scroll-mt-20">
+              <NotifyPanel key={notifyItems.map((i) => i.invoice.id).join()} items={notifyItems} customers={customerData?.customers ?? []} />
+            </div>
           )}
 
           <SavedInvoices />
