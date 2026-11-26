@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { ArrowLeft, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, FileUp, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { LoadingBlock } from "@/components/ui/Loading";
@@ -22,6 +22,7 @@ import {
   type Customer,
 } from "@/lib/invoice/customer-record";
 import { STARTER_CUSTOMERS } from "@/lib/invoice/customers-seed";
+import { customerFromPdfLines } from "@/lib/invoice/customer-from-pdf";
 import { INVOICE_TYPES, INVOICE_TYPE_KEYS } from "@/lib/invoice/invoice-record";
 
 /** The message the route sent, so a refusal reads as what it was and not as "failed". */
@@ -81,6 +82,10 @@ export default function AdminCustomersPage() {
   const [busy, setBusy] = useState(false);
   const [toDelete, setToDelete] = useState<Customer | null>(null);
   const [notice, setNotice] = useState("");
+  /** What the form was filled from, and what to check - shown above the form, not as a refusal. */
+  const [pdfNotes, setPdfNotes] = useState<string[]>([]);
+  const [readingPdf, setReadingPdf] = useState(false);
+  const pdfInput = useRef<HTMLInputElement>(null);
 
   if (access !== "allowed") return <AdminScreenGate state={access} need="admin-customers" />;
 
@@ -126,6 +131,7 @@ export default function AdminCustomersPage() {
         return;
       }
       setDraft(null);
+      setPdfNotes([]);
       setNotice(`${checked.value.code} saved.`);
       await mutate();
     } catch {
@@ -169,6 +175,64 @@ export default function AdminCustomersPage() {
     }
   }
 
+  /**
+   * Fill the Add form from an issued invoice PDF (read in this browser only). Nothing is saved
+   * until Save is pressed. A company already in the master - same Trading Partner ID or name -
+   * opens its own row instead, because the code on the PDF is not always the "Claim to" label.
+   */
+  async function addFromPdf(file: File) {
+    setReadingPdf(true);
+    setNotice("");
+    setFormError("");
+    setPdfNotes([]);
+    try {
+      const { readPdfLines } = await import("@/lib/invoice/customer-from-pdf-browser");
+      const result = customerFromPdfLines(await readPdfLines(file));
+      if (!result.ok) {
+        setNotice(`${file.name}: ${result.error}`);
+        return;
+      }
+      const read = result.value;
+      const source = read.invoiceNumber ?? file.name;
+      const same = (a: string, b: string) => a.trim() !== "" && a.trim().toLowerCase() === b.trim().toLowerCase();
+      const existing = customers.find(
+        (c) => same(c.tradingPartnerId, read.customer.tradingPartnerId) || same(c.name, read.customer.name)
+      );
+      if (existing) {
+        setDraft(draftOf(existing));
+        const pdfTitle = read.invoiceType ? read.customer.defaultTitles[read.invoiceType] : null;
+        setPdfNotes([
+          `${source} is addressed to ${read.customer.name}, which is already registered as ${existing.code}. Its record is open below; nothing was changed.`,
+          ...(read.invoiceType && pdfTitle !== existing.defaultTitles[read.invoiceType]
+            ? [`The PDF is a ${pdfTitle}; the default title for ${INVOICE_TYPES[read.invoiceType].label} here is ${existing.defaultTitles[read.invoiceType]}.`]
+            : []),
+        ]);
+        return;
+      }
+      setDraft({
+        id: null,
+        code: read.customer.code,
+        name: read.customer.name,
+        lines: Array.from({ length: MAX_ADDRESS_LINES }, (_, i) => read.customer.addressLines[i] ?? ""),
+        tradingPartnerId: read.customer.tradingPartnerId,
+        paymentTerms: read.customer.paymentTerms,
+        defaultTitles: read.customer.defaultTitles,
+      });
+      setPdfNotes([
+        `Filled in from ${source}. Check every field, then Save.`,
+        `The code "${read.customer.code}" is taken from the Trading Partner ID. It must be the label in the Excel sheet's "Claim to" column, which can differ (HMSJ is HOMS-J there).`,
+        ...(read.invoiceType
+          ? [`Default title for ${INVOICE_TYPES[read.invoiceType].label}: ${read.customer.defaultTitles[read.invoiceType]}, as on the PDF. The other kind starts as INVOICE.`]
+          : []),
+        ...read.warnings,
+      ]);
+    } catch {
+      setNotice(`${file.name} could not be read as a PDF.`);
+    } finally {
+      setReadingPdf(false);
+    }
+  }
+
   const set = (patch: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...patch } : d));
 
   return (
@@ -187,10 +251,32 @@ export default function AdminCustomersPage() {
               </p>
             </div>
             {!draft && (
+              <div className="flex flex-wrap gap-2">
+              <input
+                ref={pdfInput}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void addFromPdf(file);
+                }}
+              />
+              <button
+                type="button"
+                disabled={readingPdf || isLoading}
+                onClick={() => pdfInput.current?.click()}
+                title="Fill the form from an invoice or debit note already issued to the company. The file is read in this browser and not uploaded."
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-[#0057BC] text-[#0057BC] dark:border-[#00A3DE] dark:text-[#00A3DE] hover:bg-[#0057BC]/10 transition-colors duration-300 ease-in-out disabled:opacity-40"
+              >
+                {readingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />} Add from invoice PDF
+              </button>
               <button
                 type="button"
                 onClick={() => {
                   setDraft(blankDraft());
+                  setPdfNotes([]);
                   setFormError("");
                   setNotice("");
                 }}
@@ -198,6 +284,7 @@ export default function AdminCustomersPage() {
               >
                 <Plus className="w-4 h-4" /> Add customer
               </button>
+              </div>
             )}
           </div>
 
@@ -208,6 +295,13 @@ export default function AdminCustomersPage() {
               <h2 className="text-base font-semibold text-[#2D2A28] dark:text-white">
                 {draft.id ? `Edit ${draft.code}` : "Add customer"}
               </h2>
+              {pdfNotes.length > 0 && (
+                <ul className="space-y-1 rounded-lg border border-[#0057BC]/30 bg-[#0057BC]/10 dark:border-[#00A3DE]/40 dark:bg-[#00A3DE]/15 px-3 py-2 text-sm text-[#2D2A28] dark:text-white list-disc pl-7">
+                  {pdfNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 <label className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
                   Code (the sheet&apos;s &quot;Claim to&quot;)
@@ -285,7 +379,10 @@ export default function AdminCustomersPage() {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setDraft(null)}
+                  onClick={() => {
+                    setDraft(null);
+                    setPdfNotes([]);
+                  }}
                   className="px-5 py-2 rounded-lg text-sm font-medium border border-[#B0B5B5]/50 text-[#2D2A28] dark:text-white hover:border-[#0057BC]/50 transition-colors duration-300 ease-in-out"
                 >
                   Cancel
@@ -373,6 +470,7 @@ export default function AdminCustomersPage() {
                             aria-label={`Edit ${c.code}`}
                             onClick={() => {
                               setDraft(draftOf(c));
+                              setPdfNotes([]);
                               setFormError("");
                               setNotice("");
                             }}

@@ -144,6 +144,7 @@ const INVOICE_TABLE: TableDef = {
     stringColumn(F.paymentTerms, "Payment terms", L.paymentTerms),
     memoColumn(F.cancelReason, "Cancel reason", L.cancelReason),
     dateOnlyColumn(F.cancelledOn, "Cancelled on"),
+    memoColumn(F.statement, "Statement (page 2)", L.statement),
   ],
 };
 

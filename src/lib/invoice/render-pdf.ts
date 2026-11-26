@@ -1,7 +1,30 @@
 import { fiscalYearOf, formatInvoiceDate, type YearMonthDay } from "./dates";
 import type { Customer } from "./customer-record";
 import type { SavedInvoice } from "./invoice-record";
-import type { DocumentTitle } from "./build-pdf";
+import type { DocumentTitle, TextRasterizer } from "./build-pdf";
+import type { Statement } from "./statement-record";
+
+/**
+ * Draw text the PDF fonts cannot (Japanese A/C names) on a canvas, at 4x for print, with the
+ * fonts the Mac and Windows machines here have. Only page 2 of a statement asks for it.
+ */
+const rasterizeText: TextRasterizer = (text, fontSize) => {
+  const SCALE = 4;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const font = `${fontSize * SCALE}px "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", "MS PGothic", "Noto Sans JP", sans-serif`;
+  ctx.font = font;
+  const width = Math.ceil(ctx.measureText(text).width) + 2;
+  const height = Math.ceil(fontSize * SCALE * 1.25);
+  canvas.width = width;
+  canvas.height = height;
+  ctx.font = font; // a resize resets the context
+  ctx.fillStyle = "#000000";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(text, 1, height * 0.8);
+  return { png: canvas.toDataURL("image/png"), width: width / SCALE, height: height / SCALE };
+};
 
 /** The PDF of a saved invoice - the saved data is the record, the file is made from it. */
 export async function renderPdf(invoice: SavedInvoice, description: string): Promise<Blob> {
@@ -22,6 +45,8 @@ export async function renderPdf(invoice: SavedInvoice, description: string): Pro
     monthLabel: invoice.monthLabel,
     amount: invoice.total,
     logoPng,
+    statement: invoice.statement,
+    rasterizeText,
   });
   return new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }
@@ -47,6 +72,7 @@ export async function renderDraftPdf(draft: {
   customer: Customer;
   description: string;
   amount: number;
+  statement?: Statement | null;
 }): Promise<Blob> {
   const { buildInvoicePdf } = await import("@/lib/invoice/build-pdf");
   const logoPng = new Uint8Array(await (await fetch("/hoya-logo.png")).arrayBuffer());
@@ -64,6 +90,8 @@ export async function renderDraftPdf(draft: {
     monthLabel: draft.monthLabel,
     amount: draft.amount,
     logoPng,
+    statement: draft.statement,
+    rasterizeText,
   });
   return new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
 }

@@ -1,5 +1,7 @@
+import { formatAmount } from "../utils/format";
 import type { YearMonth } from "./dates";
-import { SheetReadError, locateLabels, readSheet, refOf, serialToYearMonth, sheetNameWarning } from "./xlsx-sheet";
+import { STATEMENT_LIMITS, assertIssuable, type Statement, type StatementColumn, type StatementRow, type StatementSummaryLine } from "./statement-record";
+import { SheetReadError, locateLabels, readSheet, refOf, serialToYearMonth, sheetNameWarning, type CellPos, type SheetCells } from "./xlsx-sheet";
 
 /** The sheet the accounting team keeps in `立替研究・出向者立替費用計算(FY….xlsm)`. */
 export const CLAIM_SHEET_NAME = "請求_出向者立替費用";
@@ -19,6 +21,17 @@ export interface ParsedClaim {
   sheetTotal: number | null;
   /** Things the file could not prove, said in words for the screen (e.g. no total to cross-check against). */
   warnings: string[];
+  /**
+   * Page 2 of every expense invoice of the month (`Expenses paid by HOYA_202610.pdf`) - one page for
+   * all the companies, made into each invoice's own by `statementFor`. `null` when the sheet has no
+   * A/C table under the claim list (the invoices are then one page, and `warnings` says so).
+   */
+  statement: Statement | null;
+}
+
+/** The month's expenses page as one company's page 2: the same page, with its claim and amount. */
+export function statementFor(statement: Statement, line: ClaimLine): Statement {
+  return { ...statement, claimTo: line.claimTo, amount: line.amount };
 }
 
 /** A sheet that cannot be read says why, in the words the person at the keyboard needs. */
@@ -128,5 +141,119 @@ export async function parseClaimSheet(file: ArrayBuffer): Promise<ParsedClaim> {
       `${CLAIM_SHEET_NAME}: no total was found under the Claim to table (after row ${endRow}), so the amounts are not cross-checked. Make sure every company is listed.`
     );
   }
-  return { claimMonth, lines, sheetTotal, warnings };
+  const statement = readExpenseStatement(cells, {
+    heading: textOf(refOf(monthLabel.col, monthLabel.row - 1)) || "Expenses paid by HOYA MD on behalf of overseas group companies",
+    claimMonth,
+    claimTo: heading,
+    endRow,
+    sheetTotal,
+  });
+  if (!statement) warnings.push(`${CLAIM_SHEET_NAME}: no "A/C Code" table under the claim list, so the invoices have no second page.`);
+  else for (const line of lines) assertIssuable(statementFor(statement, line), line.amount, line.claimTo, CLAIM_SHEET_NAME, (m) => new SheetReadError(m));
+  return { claimMonth, lines, sheetTotal, warnings, statement };
+}
+
+/**
+ * **The A/C table under the claim list** - page 2 of the expense invoices.
+ *
+ * Under the "Claim to" list: a heading row `A/C Code | A/C Name (EN) | A/C Name (JP) | <company totals>`,
+ * the company codes in the row above it and the cost centres above that, one column per company, up
+ * to the `sum` column. Printed **as the Excel prints it**: only the A/C rows with an amount (the
+ * sheet's filter on its `sum` column), and without a column Excel hides (`ITC from HMSJ`) - unless
+ * that column holds an amount, which is then shown rather than lost.
+ */
+function readExpenseStatement(
+  cells: SheetCells,
+  at: { heading: string; claimMonth: YearMonth; claimTo: CellPos; endRow: number; sheetTotal: number | null }
+): Statement | null {
+  const { valueOf, textOf } = cells;
+  const where = CLAIM_SHEET_NAME;
+  const raw = (col: number, row: number) => {
+    const v = valueOf(refOf(col, row));
+    return v && v.kind === "string" ? v.value.trim() : "";
+  };
+  const num = (col: number, row: number): number | null => {
+    const v = valueOf(refOf(col, row));
+    return v && v.kind === "number" ? v.value : null;
+  };
+
+  // The claim list as printed: every company, 0 or not, with its ※ mark and the note beside it.
+  const summary: StatementSummaryLine[] = [];
+  for (let r = at.claimTo.row + 1; r <= at.endRow; r++) {
+    const label = raw(at.claimTo.col, r);
+    const amount = num(at.claimTo.col + 1, r);
+    if (!label || amount === null) continue;
+    summary.push({ label, amount, note: raw(at.claimTo.col + 2, r), base: null, ratio: null });
+  }
+
+  const head = cells.findText((t) => t.toLowerCase() === "a/c code", SHEET_ROWS).find((p) => p.col === at.claimTo.col && p.row > at.endRow);
+  if (!head) return null;
+  const codeCol = head.col;
+  const namesRow = head.row - 1;
+  const costRow = head.row - 2;
+
+  // Company columns: from the one after A/C Name (JP) up to the "sum" column.
+  const companyCols: number[] = [];
+  for (let c = codeCol + 3; c < codeCol + 3 + STATEMENT_LIMITS.columns; c++) {
+    const name = textOf(refOf(c, namesRow));
+    if (!name || name.toLowerCase() === "sum") break;
+    companyCols.push(c);
+  }
+  if (companyCols.length === 0) throw new SheetReadError(`${where}: no company names in row ${namesRow} over the A/C table.`);
+
+  type Raw = { code: string; nameEn: string; nameJp: string; amounts: number[] };
+  const all: Raw[] = [];
+  for (let r = head.row + 1; r <= SHEET_ROWS; r++) {
+    const code = raw(codeCol, r) || (num(codeCol, r) !== null ? String(num(codeCol, r)) : "");
+    if (!code) continue;
+    const amounts = companyCols.map((c) => num(c, r) ?? 0);
+    if (amounts.some((a) => !Number.isInteger(a))) throw new SheetReadError(`${where}: the amounts for A/C ${code} (row ${r}) are not whole yen.`);
+    all.push({ code, nameEn: textOf(refOf(codeCol + 1, r)), nameJp: textOf(refOf(codeCol + 2, r)), amounts });
+  }
+
+  // Each company's column must add up to the total in the heading row.
+  const heads = companyCols.map((c) => num(c, head.row));
+  companyCols.forEach((c, i) => {
+    const s = all.reduce((a, row) => a + row.amounts[i], 0);
+    if (heads[i] !== null && heads[i] !== s) {
+      throw new SheetReadError(`${where}: the ${textOf(refOf(c, namesRow))} column adds up to ${formatAmount(s, 0)}, but its total (${refOf(c, head.row)}) is ${formatAmount(heads[i], 0)}.`);
+    }
+  });
+
+  // A column Excel hides is left out when it is empty, as the printout leaves it out.
+  const keep = companyCols.map((c, i) => !cells.isColumnHidden(c) || all.some((row) => row.amounts[i] !== 0));
+  const columns: StatementColumn[] = companyCols
+    .map((c) => ({ name: textOf(refOf(c, namesRow)), code: textOf(refOf(c, costRow)) }))
+    .filter((_, i) => keep[i]);
+  const rows: StatementRow[] = all
+    .filter((row) => row.amounts.some((a) => a !== 0))
+    .map((row) => {
+      const amounts = row.amounts.filter((_, i) => keep[i]);
+      return { code: row.code, nameEn: row.nameEn, nameJp: row.nameJp, mark: "", amounts, total: amounts.reduce((a, b) => a + b, 0) };
+    });
+  const columnTotals = columns.map((_, i) => rows.reduce((a, row) => a + row.amounts[i], 0));
+  const total = columnTotals.reduce((a, b) => a + b, 0);
+
+  const listed = summary.reduce((a, l) => a + l.amount, 0);
+  if (listed !== total) {
+    throw new SheetReadError(`${where}: the claim list adds up to ¥${formatAmount(listed, 0)}, but the A/C table to ¥${formatAmount(total, 0)}.`);
+  }
+  if (rows.length === 0) return null;
+
+  return {
+    layout: "companies",
+    heading: at.heading,
+    claimMonth: `${at.claimMonth.year}/${String(at.claimMonth.month).padStart(2, "0")}`,
+    claimTo: "",
+    amount: 0,
+    factor: null,
+    spanLabel: "",
+    columns,
+    rows,
+    columnTotals,
+    total,
+    footnote: "",
+    summary,
+    allocationBasis: "",
+  };
 }

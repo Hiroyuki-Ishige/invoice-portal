@@ -121,6 +121,7 @@ export default function Page() {
           customer,
           description: line.description,
           amount: line.amount,
+          statement: line.statement,
         })
       );
     } catch {
@@ -146,6 +147,7 @@ export default function Page() {
             title: titleOf({ index, customer }),
             description: line.description,
             amount: line.amount,
+            ...(line.statement ? { statement: line.statement } : {}),
           })),
         }),
       });
@@ -265,6 +267,11 @@ export default function Page() {
                           <tr key={index} className="border-b border-slate-100 dark:border-slate-800 align-middle">
                             <td className="py-2 pr-3 text-slate-700 dark:text-slate-200" title={line.description}>
                               {PATENT_RD_KINDS[line.kind].label}
+                              {line.statement && (
+                                <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                  {line.statement.layout === "allocation" ? "2 pages (with the allocation and A/C table)" : "2 pages (with the department table)"}
+                                </span>
+                              )}
                             </td>
                             <td className="py-2 pr-3 font-medium text-[#2D2A28] dark:text-white">{line.claimTo}</td>
                             <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">
