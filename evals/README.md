@@ -11,6 +11,8 @@ npx tsx evals/run.mts [round] [task ...]   # 例: npx tsx evals/run.mts r1
 - `tasks/<名前>/task.ts` - 架空の Excel を作る (`lib/workbook.ts`) と、直した失敗を見張る `checks`。`task.md` - 受け入れ条件
 - `lib/fixtures.ts` - 架空の取引先マスタ (コードだけ本物、名前・住所は作り物。HOMS は無い)
 - 出力: `out/<round>/<task>/` に `result.json`・入力の `.xlsx`・PDF とそのテキスト・通知の HTML (`out/` は git 管理外)
+- `run.mts` は画面と同じく、各請求書に 2 ページ目 (明細) を付け、経費のブックでは `請求_立替研究` も読む。発行は `validateIssueRequest` に通した結果 (`issueCheck`) で見る
+- 架空のシート (`lib/workbook.ts`) には、本物と同じく明細の表を既定で入れる (`claimSheet(..., { table: false })` で外せる)
 - 記録: `LOG.md`
 
 **Dataverse と Microsoft Graph は呼ばない** (`.env.local` を読まず、`sequence.ts`・Dataverse のクライアント・`send-mail` を import しない)。
