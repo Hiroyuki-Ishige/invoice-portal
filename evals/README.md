@@ -5,6 +5,7 @@
 
 ```bash
 npx tsx evals/run.mts [round] [task ...]   # 例: npx tsx evals/run.mts r1
+npm run eval                                       # = npx tsx evals/run.mts。pre-commit (.githooks/pre-commit) と GitHub Actions (.github/workflows/eval.yml) も同じものを回す
 npx tsx evals/compare.mts <前のラウンド> <今のラウンド>   # 出力が前と同じ課題は採点役なしで済ませる (違えば終了コード 1)
 ```
 

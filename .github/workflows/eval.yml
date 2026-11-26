@@ -1,0 +1,53 @@
+# The invoice evals on GitHub - the same run as the pre-commit hook (.githooks/pre-commit), where
+# `git commit --no-verify` cannot skip it: made-up workbooks through the app's own code (Excel
+# reading -> number -> PDF with page 2 -> notice -> the issue route's check), every
+# machine-decidable acceptance criterion checked. No Dataverse, no Microsoft Graph, no model,
+# no secrets. Vercel deploys on its own; this only reports.
+name: Invoice evals
+
+on:
+  push:
+    paths:
+      - "src/lib/invoice/**"
+      - "src/lib/notify/**"
+      - "src/lib/utils/format.ts"
+      - "evals/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/eval.yml"
+  pull_request:
+    paths:
+      - "src/lib/invoice/**"
+      - "src/lib/notify/**"
+      - "src/lib/utils/format.ts"
+      - "evals/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/eval.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Evals
+        run: npm run eval -- ci
+      - name: Keep the outputs when the evals fail
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-outputs
+          path: evals/out/ci/
+          retention-days: 14
