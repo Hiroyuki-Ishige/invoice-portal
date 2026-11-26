@@ -126,6 +126,7 @@ npm run dev | npm run build | npm run lint | npx tsc --noEmit
 
 - テストフレームワークなし。ロジックは使い捨て `.mts` で確かめて消す。`npm run lint` には前からのエラー
   (`set-state-in-effect`) があるので、ゲートは `npm run build` と `npx tsc --noEmit`。
+- 請求書の評価 `npm run eval` (架空の Excel 12 課題、約 2 秒) もゲート。コミット時は pre-commit (`.githooks/pre-commit`)、push 時は GitHub Actions、`main` へのマージ前は `/cp` が回し、落ちたら `main` へ入れない (2026-11-26)。
 - Dataverse のテーブル・列の作成と変更は、実行前に必ず本人へ確認する。画面 (Admin > Setup) の
   Create / Top up ボタンを本人が押すのが基本。列を足したコードをマージしたら、Top up が要ると報告する。
 - 作業はブランチで、完了したら `main` にマージ。
