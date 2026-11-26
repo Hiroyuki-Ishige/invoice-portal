@@ -12,6 +12,23 @@ const task: EvalTask = {
   name: "patent-negative",
   kind: "patent-rd",
   firstSequence: 201,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "2026-09": {
+      invoices: [
+        "HYM1AC2026-201 HOMT 1500000 INVOICE 2p | Monthly fee for delegation of technology development",
+        "HYM1AC2026-202 HOGV 300000 INVOICE 2p | Monthly fee for patent administration",
+        "HYM1AC2026-203 HLAO 45000 DEBIT NOTE 2p | Monthly fee for patent administration",
+        "HYM1AC2026-204 HOGV 12000 INVOICE 2p | Monthly fee for patent administration (New Business)",
+      ],
+      date: "30-Sep-2026",
+      warnings: [
+        "-98,765",
+        "S4",
+      ],
+      notices: 3,
+    },
+  },
   inputs: async () => [
     {
       label: "2026-09",

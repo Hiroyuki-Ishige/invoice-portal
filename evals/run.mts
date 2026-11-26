@@ -18,7 +18,7 @@
  * without Dataverse.
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ClaimSheetError, parseClaimSheet, statementFor } from "../src/lib/invoice/claim-sheet";
@@ -32,6 +32,7 @@ import { fiscalYearOf, formatInvoiceDate, formatMonthLabel, lastDayOfMonth, toDa
 import { buildInvoiceNotice } from "../src/lib/notify/invoice-notice";
 import type { Customer } from "../src/lib/invoice/customer-record";
 import { EVAL_CUSTOMERS } from "./lib/fixtures";
+import { commonChecks, expectChecks } from "./lib/expect";
 import type { EvalTask, InputResult, IssuedInvoice, TaskResult } from "./lib/types";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -189,7 +190,13 @@ async function runTask(task: EvalTask, outDir: string, logoPng: Uint8Array): Pro
   }
 
   const taskResult: TaskResult = { task: task.name, inputs, ms: Date.now() - started, checkFailures: [] };
-  taskResult.checkFailures = task.checks ? task.checks(taskResult) : [];
+  // The machine-decidable criteria: the shared rules, the task's own figures, then its regression checks.
+  const read = (file: string) => readFileSync(path.join(outDir, file), "utf8");
+  taskResult.checkFailures = [
+    ...commonChecks(taskResult, read),
+    ...(task.expect ? expectChecks(taskResult, task.expect, read) : []),
+    ...(task.checks ? task.checks(taskResult) : []),
+  ];
   await writeFile(path.join(outDir, "result.json"), JSON.stringify(taskResult, null, 2));
   return taskResult;
 }

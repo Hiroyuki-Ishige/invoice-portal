@@ -10,6 +10,18 @@ const task: EvalTask = {
   name: "sheet-name-ambiguous",
   kind: "expense",
   firstSequence: 1,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "two-copies": {
+      error: "More than one sheet could be",
+    },
+    "exact-wins": {
+      invoices: [
+        "HYM1AC2026-001 HLAM 33333 INVOICE 2p | Reimbursement for the expense",
+      ],
+      warnings: [],
+    },
+  },
   inputs: async () => [
     { label: "two-copies", file: await makeWorkbook({ "請求_出向者立替費用 (2)": copy(11111), "請求_出向者立替費用 (3)": copy(22222) }) },
     { label: "exact-wins", file: await makeWorkbook({ "請求_出向者立替費用 (2)": copy(11111), 請求_出向者立替費用: copy(33333) }) },

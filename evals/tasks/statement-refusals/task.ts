@@ -15,6 +15,30 @@ const task: EvalTask = {
   name: "statement-refusals",
   kind: "expense",
   firstSequence: 601,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "hidden-amount": {
+      error: "請求_出向者立替費用: the claim list adds up to",
+    },
+    "rd-broken": {
+      invoices: [
+        "HYM1AC2026-601 HLAM 30000 INVOICE 2p | Reimbursement for the expense",
+        "HYM1AC2026-602 HOGV 20000 INVOICE 2p | Reimbursement for the expense",
+      ],
+      warnings: [
+        "請求_立替研究",
+        "is not made",
+      ],
+    },
+    "no-table": {
+      invoices: [
+        "HYM1AC2026-603 HLAO 8000 INVOICE 1p | Reimbursement for the expense",
+      ],
+      warnings: [
+        "no \"A/C Code\" table",
+      ],
+    },
+  },
   inputs: async () => [
     {
       label: "hidden-amount",

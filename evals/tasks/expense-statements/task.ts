@@ -11,6 +11,44 @@ const task: EvalTask = {
   name: "expense-statements",
   kind: "expense",
   firstSequence: 201,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "2026-10": {
+      invoices: [
+        "HYM1AC2026-201 HLAM 50000 INVOICE 2p | Reimbursement for the expense",
+        "HYM1AC2026-202 HOMS-J 12345 INVOICE 2p | Reimbursement for the expense",
+        "HYM1AC2026-203 HLAO 7000 INVOICE 2p | Reimbursement for the expense",
+        "HYM1AC2026-204 HOMT 1234567 INVOICE 2p | Monthly fee for delegation of technology development(reimbursement)",
+      ],
+      warnings: [],
+      notices: 4,
+      pdfContains: {
+        "HYM1AC2026-201": [
+          "7000000001",
+          "7000000002",
+          "HOGV",
+          "12,345",
+        ],
+        "HYM1AC2026-204": [
+          "7650000001",
+          "7750000001",
+          "7620000001",
+          "Claim to:",
+          "1,234,567",
+        ],
+      },
+      pdfNotContains: {
+        "HYM1AC2026-201": [
+          "7000000003",
+          "ITC sample",
+        ],
+        "HYM1AC2026-202": [
+          "7000000003",
+          "ITC sample",
+        ],
+      },
+    },
+  },
   inputs: async () => [
     {
       label: "2026-10",

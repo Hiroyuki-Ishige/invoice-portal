@@ -1,5 +1,6 @@
 import type { ParsedClaim } from "../../src/lib/invoice/claim-sheet";
 import type { ParsedPatentRd } from "../../src/lib/invoice/patent-sheet";
+import type { TaskExpect } from "./expect";
 import type { ParsedRdReimbursement } from "../../src/lib/invoice/rd-reimbursement-sheet";
 
 export interface EvalTask {
@@ -15,6 +16,8 @@ export interface EvalTask {
    * that failed, in words. The grader judges `task.md`; these only stop a fixed failure coming back.
    */
   checks?: (result: TaskResult) => string[];
+  /** The task's acceptance criteria a machine can decide (`lib/expect.ts`), by input label. */
+  expect?: TaskExpect;
 }
 
 export interface IssuedInvoice {

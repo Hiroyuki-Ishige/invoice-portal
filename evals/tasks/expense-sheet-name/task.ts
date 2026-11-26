@@ -7,6 +7,25 @@ const task: EvalTask = {
   name: "expense-sheet-name",
   kind: "expense",
   firstSequence: 1,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "fullwidth-copy": {
+      invoices: [
+        "HYM1AC2026-001 HLAM 15000 INVOICE 2p | Reimbursement for the expense",
+      ],
+      warnings: [
+        "請求＿出向者立替費用（2）",
+      ],
+    },
+    "spaces-fy": {
+      invoices: [
+        "HYM1AC2026-002 HLAM 15000 INVOICE 2p | Reimbursement for the expense",
+      ],
+      warnings: [
+        " 請求_出向者立替費用 FY2026",
+      ],
+    },
+  },
   inputs: async () => [
     { label: "fullwidth-copy", file: await makeWorkbook({ Sheet1: { A1: "x" }, "請求＿出向者立替費用（2）": sheet }) },
     { label: "spaces-fy", file: await makeWorkbook({ " 請求_出向者立替費用 FY2026": sheet, 入力: { A1: "x" } }) },

@@ -6,6 +6,20 @@ const task: EvalTask = {
   name: "patent-layout-shift",
   kind: "patent-rd",
   firstSequence: 301,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "2026-12": {
+      invoices: [
+        "HYM1AC2026-301 HOMT 2000000 INVOICE 2p | Monthly fee for delegation of technology development",
+        "HYM1AC2026-302 HOMT 150000 INVOICE 2p | Monthly fee for delegation of technology development (New Business)",
+        "HYM1AC2026-303 HOGV 210000 INVOICE 2p | Monthly fee for patent administration",
+        "HYM1AC2026-304 HLAO 64000 DEBIT NOTE 2p | Monthly fee for patent administration",
+        "HYM1AC2026-305 HOGV 9000 INVOICE 2p | Monthly fee for patent administration (New Business)",
+      ],
+      warnings: [],
+      notices: 3,
+    },
+  },
   inputs: async () => {
     const { rd, patent } = patentSheets({ year: 2026, month: 12 }, {
       rd: 2000000,
