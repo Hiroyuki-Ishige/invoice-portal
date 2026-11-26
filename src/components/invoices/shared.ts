@@ -5,6 +5,15 @@ export interface Built {
   fileName: string;
 }
 
+/**
+ * The SWR keys of the two saved-invoice lists. **One spelling for the list and for the screens that
+ * refresh it** - the issue screens refreshed `/api/invoices?status=` after the list had moved to
+ * these two keys, so a newly issued invoice did not appear until the page was reloaded. The two lists are
+ * read apart so neither can crowd the other out of the newest-N cap.
+ */
+export const ISSUED_INVOICES_KEY = "/api/invoices?status=issued";
+export const CANCELLED_INVOICES_KEY = "/api/invoices?status=cancelled";
+
 export async function customersFetcher(url: string): Promise<{ customers: Customer[] }> {
   const response = await fetch(url);
   const data = await response.json().catch(() => ({}));
