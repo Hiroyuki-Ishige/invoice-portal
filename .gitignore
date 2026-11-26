@@ -43,3 +43,6 @@ next-env.d.ts
 # MCP tool working directories (browser snapshots, console logs, index caches)
 .playwright-mcp/
 .serena/
+
+# evals output
+/evals/out/

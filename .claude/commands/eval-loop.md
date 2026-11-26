@@ -29,7 +29,7 @@ AI の生成は無い。**生成 = 決まった入力から請求書を作るア
 
 `evals/` を見る。**無ければ、生成も採点もせずに止まり**、次の案を示して作るかを聞く (費用と依存が増えるので黙って作らない)。
 
-- `evals/tasks/<名前>/task.md` - 入力の説明と受け入れ条件 (4〜6 行)。`evals/tasks/<名前>/make-input.mts` - 架空の Excel を ExcelJS で作る
+- `evals/tasks/<名前>/task.md` - 入力の説明と受け入れ条件 (4〜6 行)。`evals/tasks/<名前>/task.ts` - 架空の Excel を ExcelJS で作り (`evals/lib/workbook.ts`)、直した失敗を見張る `checks` を持つ
 - `evals/run.mts` - 課題ごとに入力を作り、上の表のコードに通し、`evals/out/<ラウンド>/<課題>/` に
   `parsed.json`・`invoice-*.pdf`・`pdf-text.txt`・`notice.html` を書く。かかった時間も残す。
   `.env.local` を読まず、`sequence.ts`・Dataverse のクライアント・`send-mail` を import しない

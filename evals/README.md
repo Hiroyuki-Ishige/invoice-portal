@@ -1,0 +1,16 @@
+# evals
+
+`/eval-loop` (`.claude/commands/eval-loop.md`) が使う評価の仕組み。架空の Excel を、アプリのコード (Excel 読込 → 番号・日付 →
+請求書 PDF → 完了通知メール) に通し、出力を別のサブエージェントが `task.md` の受け入れ条件で採点する。
+
+```bash
+npx tsx evals/run.mts [round] [task ...]   # 例: npx tsx evals/run.mts r1
+```
+
+- `tasks/<名前>/task.ts` - 架空の Excel を作る (`lib/workbook.ts`) と、直した失敗を見張る `checks`。`task.md` - 受け入れ条件
+- `lib/fixtures.ts` - 架空の取引先マスタ (コードだけ本物、名前・住所は作り物。HOMS は無い)
+- 出力: `out/<round>/<task>/` に `result.json`・入力の `.xlsx`・PDF とそのテキスト・通知の HTML (`out/` は git 管理外)
+- 記録: `LOG.md`
+
+**Dataverse と Microsoft Graph は呼ばない** (`.env.local` を読まず、`sequence.ts`・Dataverse のクライアント・`send-mail` を import しない)。
+**入力はすべて架空**。経理の本物の Excel・PDF は開かない。
