@@ -546,7 +546,14 @@ export async function parsePatentRdWorkbook(file: ArrayBuffer): Promise<ParsedPa
 
   // Two blocks on each sheet, told apart by position: the left one is the main claim, the right one New Business.
   const [patentHeading, patentNbHeading] = locateLabels(patent, (t) => t === "Claim amount:", ["B", "I"], 40, '"Claim amount:" headings');
-  const [rdTo, rdNbTo] = locateLabels(rd, (t) => t === "Claim to:", ["C", "R"], 20, '"Claim to:" labels');
+  // R&D (New Business) stops being claimed separately from 2026/11 (the accounting team, 2026-11-26), so its
+  // block may be deleted from the sheet: a single "Claim to:" is the R&D block alone. Two or more are
+  // read by position as before, and anything that cannot be told apart is still refused.
+  const rdToLabels = rd.findText((t) => t === "Claim to:", 20);
+  const [rdTo, rdNbTo]: [CellPos, CellPos | null] =
+    rdToLabels.length === 1
+      ? [rdToLabels[0], null]
+      : (locateLabels(rd, (t) => t === "Claim to:", ["C", "R"], 20, '"Claim to:" labels') as [CellPos, CellPos]);
   const patentMain = readEntityBlock(patent, PATENT_SHEET_NAME, patentHeading, "patent");
   const patentNb = readEntityBlock(patent, PATENT_SHEET_NAME, patentNbHeading, "patent-nb");
   const patentPage = readPatentStatement(patent, PATENT_SHEET_NAME, patentHeading, "patent", patentMonth);
@@ -554,7 +561,12 @@ export async function parsePatentRdWorkbook(file: ArrayBuffer): Promise<ParsedPa
   const noPage = (page: Statement | null, kind: PatentRdKind) =>
     page ? [] : [`${PATENT_SHEET_NAME}: no A/C table under the ${PATENT_RD_KINDS[kind].label} block, so its invoices have no second page.`];
   const rdMain = readSingleBlock(rd, RD_SHEET_NAME, rdTo, "rd");
-  const rdNb = readSingleBlock(rd, RD_SHEET_NAME, rdNbTo, "rd-nb");
+  const rdNb = rdNbTo
+    ? readSingleBlock(rd, RD_SHEET_NAME, rdNbTo, "rd-nb")
+    : {
+        lines: [],
+        warnings: [`${RD_SHEET_NAME}: there is no R&D (New Business) block (only one "Claim to:"), so no R&D (New Business) invoice is made.`],
+      };
 
   return {
     claimMonth: patentMonth,
