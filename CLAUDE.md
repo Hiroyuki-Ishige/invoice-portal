@@ -143,6 +143,7 @@ npm run dev | npm run build | npm run lint | npx tsc --noEmit
   `/review-code-invoice-portal` (3 観点を並列。`-all` で全体、`-l` で深く)、
   `/eval-loop` (架空の Excel で Excel 読込 → 番号 → PDF・通知メールを作り、別のサブエージェントが採点する改善ループ。`evals/` が無ければ初回に作るか聞く)、
   `/c` `/cs` `/r` `/update`。
+- `evals/` の架空のシート (`evals/lib/workbook.ts`) には、本物と同じく明細の表 (2 ページ目の元) を既定で入れる。無い場合を試すときだけ `claimSheet(..., { table: false })` で外す (2026-11-26、eval r3)。
 - `agents/`: `invoice-security-reviewer` / `invoice-readability-reviewer` / `invoice-performance-reviewer` (読み取り専用)、
   `playwright-test-generator` / `healer` / `planner` (テストの導入は未定。Playwright MCP の設定は未作成)。
 - `hooks/restrict-test-writes.sh`: healer の書き込みを `e2e/` と `specs/` に限る。
