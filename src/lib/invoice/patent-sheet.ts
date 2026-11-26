@@ -123,7 +123,9 @@ function readEntityBlock(
   const headingRow = heading.row;
 
   let totalRow = 0;
-  for (let r = headingRow; r <= SHEET_ROWS; r++) {
+  // As far below the heading as the old fixed range reached (rows up to 40 with the heading near row 5),
+  // so a block with no Total does not pick up the Total of some other table further down.
+  for (let r = headingRow; r <= Math.min(SHEET_ROWS, headingRow + 35); r++) {
     if (cells.textOf(`${cols.label}${r}`) === "Total") {
       totalRow = r;
       break;
@@ -189,11 +191,14 @@ function readSingleBlock(
   claimToLabel: CellPos,
   kind: PatentRdKind
 ): { lines: PatentRdLine[]; warnings: string[] } {
-  const amountLabel = cells
-    .findText((t) => t === "Claim amount:", claimToLabel.row + 5)
-    .find((p) => p.col === claimToLabel.col && p.row > claimToLabel.row);
+  // In the same column as "Claim to:": the first one under it, else (as the old fixed search over
+  // rows 1-12 took it) the last one above it - so a sheet that read before still reads.
+  const sameCol = cells
+    .findText((t) => t === "Claim amount:", Math.max(12, claimToLabel.row + 12))
+    .filter((p) => p.col === claimToLabel.col);
+  const amountLabel = sameCol.find((p) => p.row > claimToLabel.row) ?? sameCol.filter((p) => p.row < claimToLabel.row).pop();
   if (!amountLabel) {
-    throw new SheetReadError(`${sheet}: no "Claim amount:" under "Claim to:" in ${refOf(claimToLabel.col, claimToLabel.row)}.`);
+    throw new SheetReadError(`${sheet}: no "Claim amount:" in the column of "Claim to:" in ${refOf(claimToLabel.col, claimToLabel.row)}.`);
   }
   const cols = { value: colName(claimToLabel.col + 1) };
   const toRow = claimToLabel.row;

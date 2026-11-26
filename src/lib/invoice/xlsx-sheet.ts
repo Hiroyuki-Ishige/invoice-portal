@@ -47,8 +47,10 @@ export const refOf = (col: number, row: number): string => `${colName(col)}${row
  * **The layout as built is tried first**: one label in each of `usualCols`, so a file nobody has
  * touched is read exactly as before. Failing that, the top `maxRow` rows are searched in every
  * column, which is what lets a column or a row inserted in front of a table move it (reported
- * 2026-11-26: "the cells and the sheet names move a little"). Anything but exactly `count` found
- * is refused - a guess between two labels is a guess between two amounts.
+ * 2026-11-26: "the cells and the sheet names move a little"). In that search, anything but exactly
+ * `count` found is refused - a guess between two labels is a guess between two amounts. (On the usual
+ * path the topmost label in each usual column is taken and extra ones elsewhere are not looked at,
+ * which is what the fixed-cell reader did.)
  */
 export function locateLabels(
   cells: SheetCells,
