@@ -1,3 +1,4 @@
+import { formatAmount } from "../utils/format";
 import type { YearMonth } from "./dates";
 import { SheetReadError, readSheet, serialToYearMonth, type SheetCells } from "./xlsx-sheet";
 
@@ -41,6 +42,11 @@ export interface ParsedPatentRd {
   warnings: string[];
 }
 
+/**
+ * A whole-yen amount, **which may be negative**. A negative claim used to refuse the whole workbook,
+ * so the other seven documents of the month could not be issued either (reported 2026-11-26: R&D
+ * (New Business) for 2026/09 was -403,695). The caller turns a negative into a warning instead.
+ */
 function wholeYen(cells: SheetCells, ref: string, what: string): number {
   const v = cells.valueOf(ref);
   if (!v || v.kind !== "number") {
@@ -49,8 +55,12 @@ function wholeYen(cells: SheetCells, ref: string, what: string): number {
     );
   }
   if (!Number.isInteger(v.value)) throw new SheetReadError(`${what} (${ref}) is not a whole number (${v.value}). Round it to whole yen.`);
-  if (v.value < 0) throw new SheetReadError(`${what} (${ref}) is negative (${v.value}).`);
   return v.value;
+}
+
+/** What the screen says about a negative claim: no invoice is made from it, and it is not lost silently. */
+function negativeWarning(sheet: string, ref: string, claimTo: string, kind: PatentRdKind, amount: number): string {
+  return `${sheet}: the amount for ${claimTo} (${PATENT_RD_KINDS[kind].label}) in ${ref} is negative (${formatAmount(amount, 0)}). No invoice is made for it - settle it outside the portal.`;
 }
 
 /**
@@ -95,7 +105,7 @@ function readEntityBlock(
   sheet: string,
   cols: { heading: string; label: string; amount: string },
   kind: PatentRdKind
-): { lines: PatentRdLine[]; check: PatentRdCheck | null; warning: string | null } {
+): { lines: PatentRdLine[]; check: PatentRdCheck | null; warnings: string[] } {
   let headingRow = 0;
   for (let r = 1; r <= 30; r++) {
     if (cells.textOf(`${cols.heading}${r}`) === "Claim amount:") {
@@ -114,10 +124,16 @@ function readEntityBlock(
   }
 
   const lines: PatentRdLine[] = [];
+  const warnings: string[] = [];
+  /** Every amount read, negatives included - what the sheet's own Total adds up. */
+  let sum = 0;
   const addRow = (r: number) => {
     const claimTo = cells.textOf(`${cols.label}${r}`);
-    const amount = wholeYen(cells, `${cols.amount}${r}`, `the amount for ${claimTo}`);
+    const ref = `${cols.amount}${r}`;
+    const amount = wholeYen(cells, ref, `the amount for ${claimTo}`);
+    sum += amount;
     if (amount > 0) lines.push({ kind, claimTo, amount, description: PATENT_RD_KINDS[kind].description });
+    if (amount < 0) warnings.push(negativeWarning(sheet, ref, claimTo, kind, amount));
   };
 
   if (totalRow) {
@@ -133,12 +149,15 @@ function readEntityBlock(
     }
     const sheetTotal = cells.valueOf(`${cols.amount}${totalRow}`);
     if (sheetTotal && sheetTotal.kind === "number") {
-      return { lines, check: { kind, sheetTotal: sheetTotal.value, sum: lines.reduce((a, l) => a + l.amount, 0) }, warning: null };
+      return { lines, check: { kind, sheetTotal: sheetTotal.value, sum }, warnings };
     }
     return {
       lines,
       check: null,
-      warning: `${sheet}: the Total in ${cols.amount}${totalRow} could not be read as a number, so the ${PATENT_RD_KINDS[kind].label} rows are not cross-checked.`,
+      warnings: [
+        ...warnings,
+        `${sheet}: the Total in ${cols.amount}${totalRow} could not be read as a number, so the ${PATENT_RD_KINDS[kind].label} rows are not cross-checked.`,
+      ],
     };
   }
 
@@ -146,7 +165,10 @@ function readEntityBlock(
   return {
     lines,
     check: null,
-    warning: `${sheet}: no "Total" row was found in column ${cols.label}, so the ${PATENT_RD_KINDS[kind].label} rows are not cross-checked. Make sure every company is listed.`,
+    warnings: [
+      ...warnings,
+      `${sheet}: no "Total" row was found in column ${cols.label}, so the ${PATENT_RD_KINDS[kind].label} rows are not cross-checked. Make sure every company is listed.`,
+    ],
   };
 }
 
@@ -159,7 +181,7 @@ function readSingleBlock(
   sheet: string,
   cols: { label: string; value: string },
   kind: PatentRdKind
-): PatentRdLine[] {
+): { lines: PatentRdLine[]; warnings: string[] } {
   let toRow = 0;
   let amountRow = 0;
   for (let r = 1; r <= 12; r++) {
@@ -171,8 +193,10 @@ function readSingleBlock(
 
   const claimTo = cells.textOf(`${cols.value}${toRow}`);
   if (!claimTo) throw new SheetReadError(`${sheet}: ${cols.value}${toRow} has no company to claim from.`);
-  const amount = wholeYen(cells, `${cols.value}${amountRow}`, `the amount for ${claimTo} (${PATENT_RD_KINDS[kind].label})`);
-  return amount > 0 ? [{ kind, claimTo, amount, description: PATENT_RD_KINDS[kind].description }] : [];
+  const ref = `${cols.value}${amountRow}`;
+  const amount = wholeYen(cells, ref, `the amount for ${claimTo} (${PATENT_RD_KINDS[kind].label})`);
+  if (amount < 0) return { lines: [], warnings: [negativeWarning(sheet, ref, claimTo, kind, amount)] };
+  return { lines: amount > 0 ? [{ kind, claimTo, amount, description: PATENT_RD_KINDS[kind].description }] : [], warnings: [] };
 }
 
 /**
@@ -196,16 +220,13 @@ export async function parsePatentRdWorkbook(file: ArrayBuffer): Promise<ParsedPa
 
   const patentMain = readEntityBlock(patent, PATENT_SHEET_NAME, { heading: "B", label: "C", amount: "D" }, "patent");
   const patentNb = readEntityBlock(patent, PATENT_SHEET_NAME, { heading: "I", label: "J", amount: "K" }, "patent-nb");
+  const rdMain = readSingleBlock(rd, RD_SHEET_NAME, { label: "C", value: "D" }, "rd");
+  const rdNb = readSingleBlock(rd, RD_SHEET_NAME, { label: "R", value: "S" }, "rd-nb");
 
   return {
     claimMonth: patentMonth,
-    lines: [
-      ...readSingleBlock(rd, RD_SHEET_NAME, { label: "C", value: "D" }, "rd"),
-      ...readSingleBlock(rd, RD_SHEET_NAME, { label: "R", value: "S" }, "rd-nb"),
-      ...patentMain.lines,
-      ...patentNb.lines,
-    ],
+    lines: [...rdMain.lines, ...rdNb.lines, ...patentMain.lines, ...patentNb.lines],
     checks: [patentMain.check, patentNb.check].filter((c): c is PatentRdCheck => c !== null),
-    warnings: [patentMain.warning, patentNb.warning].filter((w): w is string => w !== null),
+    warnings: [...rdMain.warnings, ...rdNb.warnings, ...patentMain.warnings, ...patentNb.warnings],
   };
 }

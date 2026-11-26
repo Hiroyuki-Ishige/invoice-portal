@@ -9,7 +9,7 @@ import { mayCancelInvoices } from "@/lib/types/user-profile";
 import { STATUS_LABELS, type SavedInvoice } from "@/lib/invoice/invoice-record";
 import { formatAmount, localStamp } from "@/lib/utils/format";
 import { renderPdf, saveBlob } from "@/lib/invoice/render-pdf";
-import { FIELD, customersFetcher } from "./shared";
+import { CANCELLED_INVOICES_KEY, FIELD, ISSUED_INVOICES_KEY, customersFetcher } from "./shared";
 import { NotifyPanel, type NotifyItem } from "./NotifyPanel";
 
 /** What the PDF prints when a saved invoice has no line to read the description from. */
@@ -28,10 +28,6 @@ async function invoicesFetcher(url: string): Promise<InvoiceListResponse> {
   return data;
 }
 
-/** The two lists, read apart so neither can crowd the other out of the newest-N cap. */
-const ISSUED_KEY = "/api/invoices?status=issued";
-const CANCELLED_KEY = "/api/invoices?status=cancelled";
-
 /** Saved invoices: find one, download its PDF again, cancel it. Cancelled ones are put away in their own box below. */
 export function SavedInvoices() {
   const { role, user } = useAuth();
@@ -45,8 +41,8 @@ export function SavedInvoices() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
-  const { data, error, isLoading } = useSWR(ISSUED_KEY, invoicesFetcher, { revalidateOnFocus: false });
-  const { data: cancelledData, error: cancelledError } = useSWR(CANCELLED_KEY, invoicesFetcher, { revalidateOnFocus: false });
+  const { data, error, isLoading } = useSWR(ISSUED_INVOICES_KEY, invoicesFetcher, { revalidateOnFocus: false });
+  const { data: cancelledData, error: cancelledError } = useSWR(CANCELLED_INVOICES_KEY, invoicesFetcher, { revalidateOnFocus: false });
   const { data: customerData } = useSWR("/api/customers", customersFetcher, { revalidateOnFocus: false });
   /** Invoices ticked for a completion notice, and what the notice panel was prepared with. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -154,7 +150,7 @@ export function SavedInvoices() {
       setBulkProgress({ done: index + 1, total: targets.length });
     }
     try {
-      await Promise.all([mutate(ISSUED_KEY), mutate(CANCELLED_KEY)]);
+      await Promise.all([mutate(ISSUED_INVOICES_KEY), mutate(CANCELLED_INVOICES_KEY)]);
     } finally {
       // Whatever the re-read did, the dialog must come back: it is locked while a run is in progress.
       setSelected((current) => new Set([...current].filter((id) => !cancelled.has(id))));
@@ -183,7 +179,7 @@ export function SavedInvoices() {
       setCancelling(null);
       setReason("");
       // It leaves the issued list and joins the cancelled box.
-      await Promise.all([mutate(ISSUED_KEY), mutate(CANCELLED_KEY)]);
+      await Promise.all([mutate(ISSUED_INVOICES_KEY), mutate(CANCELLED_INVOICES_KEY)]);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "The invoice could not be cancelled.");
     } finally {

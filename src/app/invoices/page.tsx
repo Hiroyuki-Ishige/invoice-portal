@@ -14,7 +14,7 @@ import { NotifyPanel, type NotifyItem } from "@/components/invoices/NotifyPanel"
 import { SavedInvoices } from "@/components/invoices/SavedInvoices";
 import { SheetWarnings } from "@/components/invoices/SheetWarnings";
 import { useOpenWorkbook } from "@/components/invoices/WorkbookPassword";
-import { FIELD, customersFetcher, type Built } from "@/components/invoices/shared";
+import { FIELD, ISSUED_INVOICES_KEY, customersFetcher, type Built } from "@/components/invoices/shared";
 import type { Customer } from "@/lib/invoice/customer-record";
 import type { SavedInvoice } from "@/lib/invoice/invoice-record";
 import { formatAmount } from "@/lib/utils/format";
@@ -143,7 +143,7 @@ export default function Page() {
       flushSync(() => setNotifyItems(nextNotify));
       if (nextNotify.length > 0) notifyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       setNumbers(Object.fromEntries(issued.map((i) => [i.customerCode.toLowerCase(), i.number])));
-      await mutate("/api/invoices?status=");
+      await mutate(ISSUED_INVOICES_KEY);
     } catch {
       setError("Something went wrong while issuing the invoices. Check the list below before trying again.");
     } finally {
