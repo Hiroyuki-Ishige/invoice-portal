@@ -17,10 +17,56 @@ export class SheetReadError extends Error {}
 export type CellValue = { kind: "number"; value: number } | { kind: "string"; value: string };
 
 export interface SheetCells {
+  /** The name of the sheet actually read - not always the name asked for (see `readSheet`). */
+  sheetName: string;
   /** The value in a cell such as `C2`; `null` when it is empty, an error value, or not a figure/text. */
   valueOf(ref: string): CellValue | null;
   /** The text in a cell with the `※` footnote mark removed and trimmed; `""` when it holds no text. */
   textOf(ref: string): string;
+  /** Every cell down to `maxRow` whose text (as `textOf` gives it) passes `isMatch`, left to right, then top to bottom. */
+  findText(isMatch: (text: string) => boolean, maxRow: number): CellPos[];
+}
+
+/** A cell by number: column 1 is A. */
+export interface CellPos {
+  col: number;
+  row: number;
+}
+
+export const colIndex = (letters: string): number => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+export function colName(index: number): string {
+  let s = "";
+  for (let n = index; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+}
+export const refOf = (col: number, row: number): string => `${colName(col)}${row}`;
+
+/**
+ * Where the `count` labels passing `isLabel` are - one per block, left to right.
+ *
+ * **The layout as built is tried first**: one label in each of `usualCols`, so a file nobody has
+ * touched is read exactly as before. Failing that, the top `maxRow` rows are searched in every
+ * column, which is what lets a column or a row inserted in front of a table move it (reported
+ * 2026-11-26: "the cells and the sheet names move a little"). Anything but exactly `count` found
+ * is refused - a guess between two labels is a guess between two amounts.
+ */
+export function locateLabels(
+  cells: SheetCells,
+  isLabel: (text: string) => boolean,
+  usualCols: string[],
+  maxRow: number,
+  what: string
+): CellPos[] {
+  const found = cells.findText(isLabel, maxRow);
+  const usual = usualCols.map((c) => found.find((p) => p.col === colIndex(c)));
+  if (usual.every((p) => p !== undefined)) return usual as CellPos[];
+  if (found.length === usualCols.length) return found;
+  if (found.length === 0) throw new SheetReadError(`Could not find ${what} in ${cells.sheetName}.`);
+  throw new SheetReadError(
+    `Expected ${usualCols.length === 1 ? "one" : usualCols.length} ${what} in ${cells.sheetName}, found ${found.length} (${found
+      .map((p) => refOf(p.col, p.row))
+      .join(", ")}). Remove the extra ones.`
+  );
 }
 
 function decodeXml(s: string): string {
@@ -55,7 +101,44 @@ export function serialToYearMonth(serial: number): { year: number; month: number
 }
 
 /**
- * Open `sheetName` and return its cells down to row `maxRow`.
+ * A sheet name with what people change by hand taken out, for comparing: full/half width (NFKC),
+ * case, spaces, `_` and `-`, and a trailing copy or year mark - `(2)`, `FY2026`, `(FY2026)`.
+ * `請求＿出向者立替費用（2）` and ` 請求-出向者立替費用 FY2026` both come out as `請求出向者立替費用`.
+ */
+export function normalizeSheetName(name: string): string {
+  let s = name.normalize("NFKC").toLowerCase().trim();
+  for (let prev = ""; prev !== s; ) {
+    prev = s;
+    s = s.replace(/\s*\((?:\d+|fy\s*\d{4})\)\s*$/, "").replace(/[\s_-]*fy\s*\d{4}\s*$/, "").trim();
+  }
+  return s.replace(/[\s_\-\u2010-\u2015\u2212]/g, "");
+}
+
+/**
+ * Which of `names` is the sheet called `wanted`. **The exact name wins.** Without it, the one sheet
+ * whose name is the same after `normalizeSheetName`; with two or more such sheets nothing is guessed -
+ * the wrong copy would put the wrong amounts on an invoice.
+ */
+export function resolveSheetName(names: string[], wanted: string): string | null {
+  if (names.includes(wanted)) return wanted;
+  const key = normalizeSheetName(wanted);
+  const near = names.filter((n) => normalizeSheetName(n) === key);
+  if (near.length > 1) {
+    throw new SheetReadError(
+      `More than one sheet could be "${wanted}": ${near.map((n) => `"${n}"`).join(", ")}. Rename the one to read to "${wanted}", or remove the others.`
+    );
+  }
+  return near[0] ?? null;
+}
+
+/** What the screen says when the sheet read was not the exact name: the person should know which one it was. */
+export function sheetNameWarning(cells: SheetCells, wanted: string): string | null {
+  return cells.sheetName === wanted ? null : `Read the sheet "${cells.sheetName}" as ${wanted} (the name is slightly different).`;
+}
+
+/**
+ * Open `sheetName` and return its cells down to row `maxRow`. A sheet whose name differs only
+ * slightly is read in its place (`resolveSheetName`); `sheetName` on the result says which one.
  *
  * The workbook is loaded on demand: a file this size is the reason for a loading state, not a
  * bundle. Pass the same `file` to several calls to read several sheets.
@@ -79,13 +162,14 @@ export async function readSheet(file: ArrayBuffer, sheetName: string, maxRow = 6
   if (!workbookXml || !relsXml) {
     throw new SheetReadError("The Excel file is not in the expected format (workbook.xml not found).");
   }
-  let relId: string | null = null;
-  const sheetNames: string[] = [];
+  const sheets: Array<{ name: string; relId: string | null }> = [];
   for (const m of workbookXml.matchAll(/<sheet\b[^>]*>/g)) {
     const name = attr(m[0], "name");
-    if (name) sheetNames.push(name);
-    if (name === sheetName) relId = attr(m[0], "r:id");
+    if (name) sheets.push({ name, relId: attr(m[0], "r:id") });
   }
+  const sheetNames = sheets.map((x) => x.name);
+  const actualName = resolveSheetName(sheetNames, sheetName);
+  const relId = sheets.find((x) => x.name === actualName)?.relId ?? null;
   if (!relId) {
     // Most often the wrong file for the screen (the Patent & R&D workbook dropped on Expenses, or the reverse).
     const have = sheetNames.slice(0, 8).join(", ") + (sheetNames.length > 8 ? ", ..." : "");
@@ -143,5 +227,15 @@ export async function readSheet(file: ArrayBuffer, sheetName: string, maxRow = 6
     const v = valueOf(ref);
     return v && v.kind === "string" ? v.value.replace(/※/g, "").trim() : "";
   };
-  return { valueOf, textOf };
+  const findText = (isMatch: (text: string) => boolean, limit: number): CellPos[] => {
+    const out: CellPos[] = [];
+    for (const ref of cells.keys()) {
+      const m = /^([A-Z]+)(\d+)$/.exec(ref)!;
+      const pos = { col: colIndex(m[1]), row: Number(m[2]) };
+      const text = textOf(ref);
+      if (pos.row <= limit && text && isMatch(text)) out.push(pos);
+    }
+    return out.sort((a, b) => a.col - b.col || a.row - b.row);
+  };
+  return { sheetName: actualName ?? sheetName, valueOf, textOf, findText };
 }

@@ -1,5 +1,5 @@
 import type { YearMonth } from "./dates";
-import { SheetReadError, readSheet, serialToYearMonth } from "./xlsx-sheet";
+import { SheetReadError, locateLabels, readSheet, refOf, serialToYearMonth, sheetNameWarning } from "./xlsx-sheet";
 
 /** The sheet the accounting team keeps in `立替研究・出向者立替費用計算(FY….xlsm)`. */
 export const CLAIM_SHEET_NAME = "請求_出向者立替費用";
@@ -24,7 +24,7 @@ export interface ParsedClaim {
 /** A sheet that cannot be read says why, in the words the person at the keyboard needs. */
 export { SheetReadError as ClaimSheetError };
 
-/** Labels in column B that start the part of the sheet below the claim table - never an entity. */
+/** Labels in the company-name column that start the part of the sheet below the claim table - never an entity. */
 const BELOW_TABLE_LABELS = new Set(["r3 code", "a/c code"]);
 const isBelowTable = (label: string): boolean => BELOW_TABLE_LABELS.has(label.replace(/:$/, "").trim().toLowerCase());
 
@@ -34,7 +34,7 @@ const SHEET_ROWS = 80;
 /**
  * Read the claim table out of the workbook (cached values, see `xlsx-sheet.ts`).
  *
- * The table is found by its heading (`Claim to`, column B), not at fixed rows: a row added for a
+ * The table is found by its heading (`Claim to`, usually column B), not at fixed rows: a row added for a
  * new entity must not be silently skipped. The claim month is found the same way, by its
  * `Claim month` label - it was the fixed cell `C2`, and a row inserted above it would have pointed
  * at whatever number landed there (any number from 2000 to 2099 reads as a month).
@@ -47,35 +47,34 @@ const SHEET_ROWS = 80;
  * `warnings` says it could not be cross-checked.
  */
 export async function parseClaimSheet(file: ArrayBuffer): Promise<ParsedClaim> {
-  const { valueOf, textOf } = await readSheet(file, CLAIM_SHEET_NAME, SHEET_ROWS);
-  const labelOf = (row: number): string => textOf(`B${row}`);
-  const numberAt = (row: number): number | null => {
-    const v = valueOf(`C${row}`);
-    return v && v.kind === "number" ? v.value : null;
-  };
+  const cells = await readSheet(file, CLAIM_SHEET_NAME, SHEET_ROWS);
+  const { valueOf, textOf } = cells;
 
-  let monthRef = "";
-  for (let r = 1; r <= 12; r++) {
-    if (labelOf(r).replace(/:$/, "").trim().toLowerCase() === "claim month") {
-      monthRef = `C${r}`;
-      break;
-    }
-  }
-  if (!monthRef) throw new SheetReadError('Could not find the "Claim month" label in column B.');
+  // Found by their labels, which may have moved with an inserted row or column; the figure is the
+  // cell to the right of its label, and the amounts are the column to the right of the company names.
+  const [monthLabel] = locateLabels(
+    cells,
+    (t) => t.replace(/:$/, "").trim().toLowerCase() === "claim month",
+    ["B"],
+    20,
+    'the "Claim month" label'
+  );
+  const monthRef = refOf(monthLabel.col + 1, monthLabel.row);
   const monthCell = valueOf(monthRef);
   const claimMonth = monthCell && monthCell.kind === "number" ? serialToYearMonth(monthCell.value) : null;
   if (!claimMonth) {
     throw new SheetReadError(`Could not read the Claim month in ${monthRef} as a date (e.g. 2026/10).`);
   }
 
-  let headerRow = 0;
-  for (let r = 1; r <= 40; r++) {
-    if (labelOf(r) === "Claim to") {
-      headerRow = r;
-      break;
-    }
-  }
-  if (!headerRow) throw new SheetReadError('Could not find the "Claim to" heading in column B.');
+  const [heading] = locateLabels(cells, (t) => t === "Claim to", ["B"], 40, 'the "Claim to" heading');
+  const headerRow = heading.row;
+  const labelRef = (row: number): string => refOf(heading.col, row);
+  const amountRef = (row: number): string => refOf(heading.col + 1, row);
+  const labelOf = (row: number): string => textOf(labelRef(row));
+  const numberAt = (row: number): number | null => {
+    const v = valueOf(amountRef(row));
+    return v && v.kind === "number" ? v.value : null;
+  };
 
   const lines: ClaimLine[] = [];
   let sheetTotal: number | null = null;
@@ -95,21 +94,23 @@ export async function parseClaimSheet(file: ArrayBuffer): Promise<ParsedClaim> {
     }
     if (isBelowTable(label)) break;
     endRow = r;
-    const amount = valueOf(`C${r}`);
+    const amount = valueOf(amountRef(r));
     if (!amount || amount.kind !== "number") {
       throw new SheetReadError(
-        `Could not read the amount for ${label} (C${r}) as a number. Open the file in Excel, let it recalculate, save it, and upload it again.`
+        `Could not read the amount for ${label} (${amountRef(r)}) as a number. Open the file in Excel, let it recalculate, save it, and upload it again.`
       );
     }
     const n = amount.value;
     if (!Number.isInteger(n)) {
-      throw new SheetReadError(`The amount for ${label} (C${r}) is not a whole number (${n}). Round it to whole yen.`);
+      throw new SheetReadError(`The amount for ${label} (${amountRef(r)}) is not a whole number (${n}). Round it to whole yen.`);
     }
-    if (n < 0) throw new SheetReadError(`The amount for ${label} (C${r}) is negative (${n}).`);
+    if (n < 0) throw new SheetReadError(`The amount for ${label} (${amountRef(r)}) is negative (${n}).`);
     if (n > 0) lines.push({ claimTo: label, amount: n });
   }
 
   const warnings: string[] = [];
+  const renamed = sheetNameWarning(cells, CLAIM_SHEET_NAME);
+  if (renamed) warnings.push(renamed);
   if (totalRow) {
     // A company listed below the total would be left out of the invoices without a word.
     // Down to where the part below the table begins - not a fixed few rows, so a company far under a
@@ -119,7 +120,7 @@ export async function parseClaimSheet(file: ArrayBuffer): Promise<ParsedClaim> {
       if (!label) continue;
       if (isBelowTable(label)) break;
       throw new SheetReadError(
-        `${label} (B${r}) is below C${totalRow}, a figure with no company name beside it (read as the total). Fill in the company name there, or move the row above it.`
+        `${label} (${labelRef(r)}) is below ${amountRef(totalRow)}, a figure with no company name beside it (read as the total). Fill in the company name there, or move the row above it.`
       );
     }
   } else {

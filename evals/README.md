@@ -7,6 +7,7 @@
 npx tsx evals/run.mts [round] [task ...]   # 例: npx tsx evals/run.mts r1
 ```
 
+- **課題はすべて常設** (2026-11-26 に利用者が決定)。毎回のラウンドで全課題を回す。前のラウンドと出力が同じ課題は、比べるだけで採点役を呼ばなくてよい
 - `tasks/<名前>/task.ts` - 架空の Excel を作る (`lib/workbook.ts`) と、直した失敗を見張る `checks`。`task.md` - 受け入れ条件
 - `lib/fixtures.ts` - 架空の取引先マスタ (コードだけ本物、名前・住所は作り物。HOMS は無い)
 - 出力: `out/<round>/<task>/` に `result.json`・入力の `.xlsx`・PDF とそのテキスト・通知の HTML (`out/` は git 管理外)

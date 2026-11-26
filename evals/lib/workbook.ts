@@ -44,3 +44,50 @@ export function claimSheet(claim: { year: number; month: number }, rows: Array<[
   cells[`B${r + 2}`] = "R3 code";
   return cells;
 }
+
+const colIndex = (letters: string): number => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+const colName = (index: number): string => {
+  let s = "";
+  for (let n = index; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+};
+
+/** The same cells moved `cols` to the right and `rows` down - columns and rows inserted in front of the table. */
+export function shift(cells: Cells, cols: number, rows: number): Cells {
+  const out: Cells = {};
+  for (const [ref, value] of Object.entries(cells)) {
+    const m = /^([A-Z]+)(\d+)$/.exec(ref)!;
+    out[`${colName(colIndex(m[1]) + cols)}${Number(m[2]) + rows}`] = value;
+  }
+  return out;
+}
+
+/**
+ * The two sheets of the Patent & R&D workbook as the readers expect them (`請求_研究` and `請求_特許`),
+ * with made-up figures: R&D HOMT, R&D (New Business) HOMT, Patent per entity with its Total, Patent
+ * (New Business) per entity with its Total.
+ */
+export function patentSheets(claim: { year: number; month: number }, f: {
+  rd: number;
+  rdNb: number;
+  patent: Array<[string, number]>;
+  patentNb: Array<[string, number]>;
+}): { rd: Cells; patent: Cells } {
+  const m = month(claim.year, claim.month);
+  const rd: Cells = {
+    C1: "R&D supplies and outsourced work paid by EXAMPLE",
+    C2: "Claim year/month:", D2: m, C3: "Claim to:", D3: "HOMT", C4: "Claim amount:", D4: f.rd,
+    R1: "Research and Development Fees(New Business)",
+    R2: "Claim year/month:", S2: m, R3: "Claim to:", S3: "HOMT", R4: "Claim amount:", S4: f.rdNb,
+  };
+  const patent: Cells = { B2: "Claim year/month:", C2: m, B5: "Claim amount:", I5: "Claim amount:" };
+  let r = 6;
+  for (const [code, amount] of f.patent) { patent[`C${r}`] = code; patent[`D${r}`] = amount; r++; }
+  patent[`C${r}`] = "Total";
+  patent[`D${r}`] = f.patent.reduce((a, [, n]) => a + n, 0);
+  r = 6;
+  for (const [code, amount] of f.patentNb) { patent[`J${r}`] = code; patent[`K${r}`] = amount; r++; }
+  patent[`J${r}`] = "Total";
+  patent[`K${r}`] = f.patentNb.reduce((a, [, n]) => a + n, 0);
+  return { rd, patent };
+}
