@@ -16,7 +16,7 @@ argument-hint: "[review | no review]"
 3. `main` にいる場合はブランチを切る。作業ブランチにいる場合はそのまま。
 4. コミットする。
 5. そのブランチを push する。
-6. **`main` にマージする。** `git checkout main && git merge --no-ff <branch>`。衝突を解いた、または main が先に進んでいたときは、`npm run build` と `npx tsc --noEmit` をやり直してから 7 へ。`--force`・`--no-verify`・`reset --hard` は使わない。push が拒否されたら止めて報告する
+6. **`main` にマージする。** `git checkout main && git merge --no-ff <branch>`。衝突を解いた、または main が先に進んでいたときは、`npm run build`・`npx tsc --noEmit`・`npm run eval` をやり直してから 7 へ。`--force`・`--no-verify`・`reset --hard` は使わない。push が拒否されたら止めて報告する
 7. **`main` を push する。**
 
 ## レビューを回すか
@@ -73,7 +73,8 @@ argument-hint: "[review | no review]"
 `main` は本番。マージがリリースそのものなので、先に仕上げてから実行し、
 検証できたことと、できていないことを分けて伝える。
 
-このリポジトリでの検証は `npm run build` と `npx tsc --noEmit`。テストのフレームワークは無い。`npm run lint` には
+このリポジトリでの検証は `npm run build`、`npx tsc --noEmit`、`npm run eval`（請求書の評価 12 課題。約 2 秒、Dataverse もモデルも呼ばない。
+**落ちたら main へ入れない**。GitHub の必須チェックは、PR を使わず直接 push するこの流れでは効かないので、ここがマージ前の関門になる）。テストのフレームワークは無い。`npm run lint` には
 前から残っているエラー（`set-state-in-effect`）があるので、ゲートにせず、新しい指摘が増えていないかだけ見る。
 PDF やメールの体裁を変えたときは、PDF を 1 枚作ってサンプルと見比べ、メールは利用者に自分宛へ 1 通送ってもらって確かめてから
 （できなければ、できていないと書く）。Dataverse の表や列を足した変更は、画面（Admin > Setup）で
