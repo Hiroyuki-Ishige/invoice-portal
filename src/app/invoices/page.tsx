@@ -18,7 +18,7 @@ import { FIELD, ISSUED_INVOICES_KEY, customersFetcher, type Built } from "@/comp
 import type { Customer } from "@/lib/invoice/customer-record";
 import type { SavedInvoice } from "@/lib/invoice/invoice-record";
 import { formatAmount } from "@/lib/utils/format";
-import { ClaimSheetError, parseClaimSheet, statementFor, type ParsedClaim } from "@/lib/invoice/claim-sheet";
+import { CLAIM_SHEET_NAME, ClaimSheetError, parseClaimSheet, statementFor, type ParsedClaim } from "@/lib/invoice/claim-sheet";
 import { RD_DESCRIPTION, RD_SHEET_NAME, parseRdReimbursementSheet, type ParsedRdReimbursement } from "@/lib/invoice/rd-reimbursement-sheet";
 import type { Statement } from "@/lib/invoice/statement-record";
 import { formatMonthLabel, lastDayOfMonth, parseDateInput, toDateInput } from "@/lib/invoice/dates";
@@ -136,6 +136,33 @@ export default function Page() {
   const creatable = rows.filter((r) => r.customer);
   // What was chosen on this screen, else the customer's default (Admin > Customers) - both kinds come from the expenses workbook.
   const titleOf = (row: Row): DocumentTitle => titles[row.key] || row.customer?.defaultTitles.expense || "INVOICE";
+  const sum = claim ? claim.lines.reduce((a, l) => a + l.amount, 0) : 0;
+  /** The review table in one block per sheet, each with its own total and the check against that sheet. */
+  const groups = [
+    {
+      key: "expense",
+      sheet: CLAIM_SHEET_NAME,
+      rows: rows.filter((r) => !r.key.startsWith("rd:")),
+      total: sum,
+      check:
+        claim?.sheetTotal == null
+          ? "The Excel has no total, so nothing was cross-checked."
+          : claim.sheetTotal === sum
+            ? "Matches the total in the Excel."
+            : `Does not match the Excel total of ¥${formatAmount(claim.sheetTotal, 0)}.`,
+    },
+    ...(rd
+      ? [
+          {
+            key: "rd",
+            sheet: RD_SHEET_NAME,
+            rows: rows.filter((r) => r.key.startsWith("rd:")),
+            total: rd.amount,
+            check: "Matches the Claim amount and the A/C table in the Excel.",
+          },
+        ]
+      : []),
+  ];
   const sheetWarnings = [
     ...(claim?.warnings ?? []),
     ...(rd?.warnings ?? []),
@@ -144,7 +171,6 @@ export default function Page() {
       : []),
   ];
   const canBuild = !!claim && !!date && creatable.length > 0 && !building && !issuedDone;
-  const sum = claim ? claim.lines.reduce((a, l) => a + l.amount, 0) : 0;
 
   async function build() {
     if (!claim || !date) return;
@@ -303,8 +329,26 @@ export default function Page() {
                         <th className="py-2 font-semibold">PDF</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {rows.map((row) => {
+                    {/*
+                      One block per sheet, each with its own total checked against its own sheet: the
+                      expenses against the total under the Claim to list, the R&D reimbursement against
+                      its Claim amount (the reader refuses that sheet when its A/C table does not add up
+                      to it). One sum over both would match neither.
+                    */}
+                    {groups.map((group, groupIndex) => (
+                      <tbody key={group.key}>
+                        {groups.length > 1 && (
+                          <tr>
+                            <th
+                              colSpan={6}
+                              scope="colgroup"
+                              className={`pb-1 text-left text-xs font-semibold text-[#0057BC] dark:text-[#00A3DE] ${groupIndex > 0 ? "pt-6" : "pt-3"}`}
+                            >
+                              {group.sheet}
+                            </th>
+                          </tr>
+                        )}
+                        {group.rows.map((row) => {
                         const { customer } = row;
                         return (
                         <tr key={row.key} className="border-b border-slate-100 dark:border-slate-800 align-middle">
@@ -383,25 +427,20 @@ export default function Page() {
                           </td>
                         </tr>
                         );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr>
-                        <td className="pt-3 font-semibold text-[#2D2A28] dark:text-white" colSpan={2}>
-                          {rd ? "Total of the expenses" : "Total"}
-                        </td>
-                        <td className="pt-3 text-right font-semibold tabular-nums text-[#2D2A28] dark:text-white">
-                          ¥{formatAmount(sum, 0)}
-                        </td>
-                        <td colSpan={3} className="pt-3 pl-3 text-xs text-slate-500 dark:text-slate-400">
-                          {claim.sheetTotal === null
-                            ? "The Excel has no total, so nothing was cross-checked."
-                            : claim.sheetTotal === sum
-                              ? "Matches the total in the Excel."
-                              : `Does not match the Excel total of ¥${formatAmount(claim.sheetTotal, 0)}.`}
-                        </td>
-                      </tr>
-                    </tfoot>
+                        })}
+                        <tr>
+                          <td className="pt-3 font-semibold text-[#2D2A28] dark:text-white" colSpan={2}>
+                            {groups.length > 1 ? `Total - ${group.sheet}` : "Total"}
+                          </td>
+                          <td className="pt-3 text-right font-semibold tabular-nums text-[#2D2A28] dark:text-white">
+                            ¥{formatAmount(group.total, 0)}
+                          </td>
+                          <td colSpan={3} className="pt-3 pl-3 text-xs text-slate-500 dark:text-slate-400">
+                            {group.check}
+                          </td>
+                        </tr>
+                      </tbody>
+                    ))}
                   </table>
                 </div>
               </GlassCard>
