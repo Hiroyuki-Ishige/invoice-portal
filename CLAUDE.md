@@ -121,7 +121,9 @@ npm run dev | npm run build | npm run lint | npx tsc --noEmit
 ## Claude の道具 (`.claude/`)
 
 - `commands/`: `/cp` (検証 → 任意のレビュー → コミット → `main` へマージ → push。`/cp review` でレビューを回す)、
-  `/review-code-invoice-portal` (3 観点を並列。`-all` で全体、`-l` で深く)、`/c` `/cs` `/r` `/update`。
+  `/review-code-invoice-portal` (3 観点を並列。`-all` で全体、`-l` で深く)、
+  `/eval-loop` (架空の Excel で Excel 読込 → 番号 → PDF・通知メールを作り、別のサブエージェントが採点する改善ループ。`evals/` が無ければ初回に作るか聞く)、
+  `/c` `/cs` `/r` `/update`。
 - `agents/`: `invoice-security-reviewer` / `invoice-readability-reviewer` / `invoice-performance-reviewer` (読み取り専用)、
   `playwright-test-generator` / `healer` / `planner` (テストの導入は未定。Playwright MCP の設定は未作成)。
 - `hooks/restrict-test-writes.sh`: healer の書き込みを `e2e/` と `specs/` に限る。
