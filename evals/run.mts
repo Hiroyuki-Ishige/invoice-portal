@@ -11,27 +11,43 @@
  *
  * What mirrors a screen rather than calling it - the invoice date defaulting to the last day of the
  * claim month, a code with no customer making no invoice and taking no number, the customer's
- * default title - is the rule `/invoices` and `/invoices/patent-rd` apply, written once here.
+ * default title, the expenses workbook's optional `請求_立替研究` row after the expense rows (a problem in
+ * that sheet is a warning, not a refusal of the expenses), each invoice's page 2 - is the rule `/invoices`
+ * and `/invoices/patent-rd` apply, written once here. The request the screen would POST is put through
+ * `validateIssueRequest` (what the issue route checks before it saves anything): that is "issuing"
+ * without Dataverse.
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseClaimSheet } from "../src/lib/invoice/claim-sheet";
+import { ClaimSheetError, parseClaimSheet, statementFor } from "../src/lib/invoice/claim-sheet";
 import { parsePatentRdWorkbook } from "../src/lib/invoice/patent-sheet";
+import { RD_DESCRIPTION, parseRdReimbursementSheet, type ParsedRdReimbursement } from "../src/lib/invoice/rd-reimbursement-sheet";
+import { validateIssueRequest } from "../src/lib/invoice/invoice-record";
+import type { Statement } from "../src/lib/invoice/statement-record";
 import { buildInvoicePdf } from "../src/lib/invoice/build-pdf";
 import { invoiceNumberFor } from "../src/lib/invoice/invoice-number";
 import { fiscalYearOf, formatInvoiceDate, formatMonthLabel, lastDayOfMonth, toDateInput } from "../src/lib/invoice/dates";
 import { buildInvoiceNotice } from "../src/lib/notify/invoice-notice";
 import type { Customer } from "../src/lib/invoice/customer-record";
 import { EVAL_CUSTOMERS } from "./lib/fixtures";
+import { commonChecks, expectChecks } from "./lib/expect";
 import type { EvalTask, InputResult, IssuedInvoice, TaskResult } from "./lib/types";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 /** What `/invoices` prints in the Description column (the constant in `src/app/invoices/page.tsx`). */
 const EXPENSE_DESCRIPTION = "Reimbursement for the expense";
 
-async function pdfText(bytes: Uint8Array): Promise<string> {
+/** One document the screen would issue - an expense row, the R&D reimbursement row, or a Patent & R&D row. */
+interface Item {
+  claimTo: string;
+  amount: number;
+  description: string;
+  statement: Statement | null;
+}
+
+async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number }> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const doc = await pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: true, verbosity: 0 }).promise;
   const pages: string[] = [];
@@ -50,7 +66,8 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
     if (line.trim()) lines.push(line.trim());
     pages.push(lines.filter(Boolean).join("\n"));
   }
-  return pages.join("\n\n");
+  // Pages are marked so the grader can tell page 1 (the invoice) from page 2 (the statement).
+  return { text: pages.map((p, i) => `--- page ${i + 1} ---\n${p}`).join("\n\n"), pages: doc.numPages };
 }
 
 async function runTask(task: EvalTask, outDir: string, logoPng: Uint8Array): Promise<TaskResult> {
@@ -61,22 +78,47 @@ async function runTask(task: EvalTask, outDir: string, logoPng: Uint8Array): Pro
   await mkdir(outDir, { recursive: true });
 
   for (const input of await task.inputs()) {
-    const result: InputResult = { label: input.label, error: null, parsed: null, invoices: [], unregistered: [], notices: [] };
+    const result: InputResult = { label: input.label, error: null, parsed: null, rd: null, invoices: [], unregistered: [], notices: [], issueCheck: null };
     inputs.push(result);
     await writeFile(path.join(outDir, `${input.label}.xlsx`), new Uint8Array(input.file));
     let parsed;
+    let rd: ParsedRdReimbursement | null = null;
     try {
       parsed = task.kind === "expense" ? await parseClaimSheet(input.file) : await parsePatentRdWorkbook(input.file);
+      if (task.kind === "expense") {
+        // As /invoices: the R&D reimbursement sheet is optional, and its problem does not stop the expenses.
+        try {
+          rd = await parseRdReimbursementSheet(input.file);
+        } catch (e) {
+          if (!(e instanceof ClaimSheetError)) throw e;
+          parsed.warnings.push(`${e.message} The R&D reimbursement invoice is not made until this is fixed.`);
+        }
+      }
     } catch (e) {
       result.error = `${(e as Error).constructor.name}: ${(e as Error).message}`;
       continue;
     }
     result.parsed = parsed;
+    result.rd = rd;
+    const claim = parsed;
+    const items: Item[] =
+      "description" in (parsed.lines[0] ?? {}) || task.kind === "patent-rd"
+        ? (parsed.lines as Array<Item & { statement?: Statement }>).map((l) => ({ ...l, statement: l.statement ?? null }))
+        : [
+            ...parsed.lines.map((l) => ({
+              claimTo: l.claimTo,
+              amount: l.amount,
+              description: EXPENSE_DESCRIPTION,
+              statement: "statement" in claim && claim.statement ? statementFor(claim.statement, l) : null,
+            })),
+            ...(rd ? [{ claimTo: rd.claimTo, amount: rd.amount, description: RD_DESCRIPTION, statement: rd.statement }] : []),
+          ];
 
     const date = lastDayOfMonth(parsed.claimMonth);
     const fiscalYear = fiscalYearOf(date);
     const monthLabel = formatMonthLabel(parsed.claimMonth);
-    for (const line of parsed.lines) {
+    const posted: Array<{ claimTo: string; title: string; description: string; amount: number; statement?: Statement }> = [];
+    for (const line of items) {
       const customer = customerByCode.get(line.claimTo.toLowerCase());
       if (!customer) {
         result.unregistered.push(line.claimTo);
@@ -85,8 +127,9 @@ async function runTask(task: EvalTask, outDir: string, logoPng: Uint8Array): Pro
       const sequence = nextSequence.get(fiscalYear) ?? task.firstSequence;
       nextSequence.set(fiscalYear, sequence + 1);
       const number = invoiceNumberFor(date, sequence);
-      const description = "description" in line ? line.description : EXPENSE_DESCRIPTION;
+      const description = line.description;
       const title = customer.defaultTitles[task.kind];
+      posted.push({ claimTo: line.claimTo, title, description, amount: line.amount, ...(line.statement ? { statement: line.statement } : {}) });
       const bytes = await buildInvoicePdf({
         title,
         invoiceNumber: number,
@@ -97,11 +140,13 @@ async function runTask(task: EvalTask, outDir: string, logoPng: Uint8Array): Pro
         monthLabel,
         amount: line.amount,
         logoPng,
+        statement: line.statement,
       });
       const pdfFile = `${input.label}-${number}.pdf`;
       await writeFile(path.join(outDir, pdfFile), bytes);
       const textFile = `${input.label}-${number}.txt`;
-      await writeFile(path.join(outDir, textFile), await pdfText(bytes));
+      const { text, pages } = await pdfText(bytes);
+      await writeFile(path.join(outDir, textFile), text);
       const issued: IssuedInvoice = {
         number,
         title,
@@ -113,8 +158,16 @@ async function runTask(task: EvalTask, outDir: string, logoPng: Uint8Array): Pro
         description,
         pdfFile,
         textFile,
+        pages,
+        statementLayout: line.statement?.layout ?? null,
       };
       result.invoices.push(issued);
+    }
+
+    // Issuing: the request the screen would POST, as JSON, through the route's own check.
+    if (posted.length > 0) {
+      const checked = validateIssueRequest(JSON.parse(JSON.stringify({ invoiceDate: toDateInput(date), monthLabel, items: posted })));
+      result.issueCheck = checked.ok ? "ok" : checked.error;
     }
 
     // One notice per company, as `NotifyPanel` sends them.
@@ -137,7 +190,13 @@ async function runTask(task: EvalTask, outDir: string, logoPng: Uint8Array): Pro
   }
 
   const taskResult: TaskResult = { task: task.name, inputs, ms: Date.now() - started, checkFailures: [] };
-  taskResult.checkFailures = task.checks ? task.checks(taskResult) : [];
+  // The machine-decidable criteria: the shared rules, the task's own figures, then its regression checks.
+  const read = (file: string) => readFileSync(path.join(outDir, file), "utf8");
+  taskResult.checkFailures = [
+    ...commonChecks(taskResult, read),
+    ...(task.expect ? expectChecks(taskResult, task.expect, read) : []),
+    ...(task.checks ? task.checks(taskResult) : []),
+  ];
   await writeFile(path.join(outDir, "result.json"), JSON.stringify(taskResult, null, 2));
   return taskResult;
 }

@@ -126,6 +126,7 @@ npm run dev | npm run build | npm run lint | npx tsc --noEmit
 
 - テストフレームワークなし。ロジックは使い捨て `.mts` で確かめて消す。`npm run lint` には前からのエラー
   (`set-state-in-effect`) があるので、ゲートは `npm run build` と `npx tsc --noEmit`。
+- 請求書の評価 `npm run eval` (架空の Excel 12 課題、約 2 秒) もゲート。コミット時は pre-commit (`.githooks/pre-commit`)、push 時は GitHub Actions、`main` へのマージ前は `/cp` が回し、落ちたら `main` へ入れない (2026-11-26)。
 - Dataverse のテーブル・列の作成と変更は、実行前に必ず本人へ確認する。画面 (Admin > Setup) の
   Create / Top up ボタンを本人が押すのが基本。列を足したコードをマージしたら、Top up が要ると報告する。
 - 作業はブランチで、完了したら `main` にマージ。
@@ -143,6 +144,7 @@ npm run dev | npm run build | npm run lint | npx tsc --noEmit
   `/review-code-invoice-portal` (3 観点を並列。`-all` で全体、`-l` で深く)、
   `/eval-loop` (架空の Excel で Excel 読込 → 番号 → PDF・通知メールを作り、別のサブエージェントが採点する改善ループ。`evals/` が無ければ初回に作るか聞く)、
   `/c` `/cs` `/r` `/update`。
+- `evals/` の架空のシート (`evals/lib/workbook.ts`) には、本物と同じく明細の表 (2 ページ目の元) を既定で入れる。無い場合を試すときだけ `claimSheet(..., { table: false })` で外す (2026-11-26、eval r3)。
 - `agents/`: `invoice-security-reviewer` / `invoice-readability-reviewer` / `invoice-performance-reviewer` (読み取り専用)、
   `playwright-test-generator` / `healer` / `planner` (テストの導入は未定。Playwright MCP の設定は未作成)。
 - `hooks/restrict-test-writes.sh`: healer の書き込みを `e2e/` と `specs/` に限る。

@@ -6,6 +6,20 @@ const task: EvalTask = {
   name: "expense-normal",
   kind: "expense",
   firstSequence: 101,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "2026-10": {
+      invoices: [
+        "HYM1AC2026-101 HLAM 120000 INVOICE 2p | Reimbursement for the expense",
+        "HYM1AC2026-102 HOMS-J 35500 INVOICE 2p | Reimbursement for the expense",
+        "HYM1AC2026-103 HOGV2 250000 INVOICE 2p | Reimbursement for the expense",
+      ],
+      date: "31-Oct-2026",
+      warnings: [],
+      notices: 3,
+      noticeSubjectPrefix: "[TEST]",
+    },
+  },
   inputs: async () => [
     {
       label: "2026-10",

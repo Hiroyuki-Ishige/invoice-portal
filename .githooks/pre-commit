@@ -1,0 +1,23 @@
+#!/bin/sh
+# Invoice Portal pre-commit hook (enabled by `npm install` through the "prepare" script:
+# git config core.hooksPath .githooks).
+#
+# When the commit touches the code that reads the Excel files and makes and issues the invoices,
+# run the evals (evals/run.mts): made-up workbooks through the app's own code, with every
+# machine-decidable acceptance criterion checked. No Dataverse, no Graph, no model - about 2 seconds.
+# A failure stops the commit. In an emergency: git commit --no-verify (and say why in the commit).
+
+changed=$(git diff --cached --name-only --diff-filter=ACMRD | grep -E '^(src/lib/invoice/|src/lib/notify/|src/lib/utils/format\.ts|evals/)')
+[ -z "$changed" ] && exit 0
+
+echo "pre-commit: invoice code or evals changed - running the evals..."
+log=$(mktemp)
+if npx tsx evals/run.mts pre-commit >"$log" 2>&1; then
+  echo "pre-commit: evals passed ($(grep -c 'check failure' "$log") tasks)."
+  rm -f "$log"
+  exit 0
+fi
+echo "pre-commit: evals FAILED - the commit was stopped."
+grep -E '[1-9][0-9]* check failure|CHECK FAILED|Error:' "$log" | head -40
+echo "(full output: $log; outputs in evals/out/pre-commit/)"
+exit 1

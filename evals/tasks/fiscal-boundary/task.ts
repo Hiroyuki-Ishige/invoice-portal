@@ -9,6 +9,23 @@ const task: EvalTask = {
   name: "fiscal-boundary",
   kind: "expense",
   firstSequence: 1,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "2026-03": {
+      invoices: [
+        "HYM1AC2025-001 HLAM 10000 INVOICE 2p | Reimbursement for the expense",
+      ],
+      date: "31-Mar-2026",
+      warnings: [],
+    },
+    "2026-04": {
+      invoices: [
+        "HYM1AC2026-001 HLAM 10000 INVOICE 2p | Reimbursement for the expense",
+      ],
+      date: "30-Apr-2026",
+      warnings: [],
+    },
+  },
   inputs: async () => [
     { label: "2026-03", file: await sheet(3) },
     { label: "2026-04", file: await sheet(4) },

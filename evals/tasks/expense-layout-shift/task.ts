@@ -6,6 +6,17 @@ const task: EvalTask = {
   name: "expense-layout-shift",
   kind: "expense",
   firstSequence: 1,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "2026-11": {
+      invoices: [
+        "HYM1AC2026-001 HLAM 80000 INVOICE 2p | Reimbursement for the expense",
+        "HYM1AC2026-002 HOGV2 33000 INVOICE 2p | Reimbursement for the expense",
+      ],
+      warnings: [],
+      notices: 2,
+    },
+  },
   inputs: async () => [
     {
       label: "2026-11",

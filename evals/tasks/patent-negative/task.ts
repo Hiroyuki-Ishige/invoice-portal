@@ -1,4 +1,4 @@
-import { makeWorkbook, month } from "../../lib/workbook";
+import { makeWorkbook, patentSheets } from "../../lib/workbook";
 import type { EvalTask } from "../../lib/types";
 import type { ParsedPatentRd } from "../../../src/lib/invoice/patent-sheet";
 
@@ -7,50 +7,41 @@ import type { ParsedPatentRd } from "../../../src/lib/invoice/patent-sheet";
  * (the real figure is not used - every figure here is made up). The negative must not stop the
  * other documents of the month.
  */
-const claimMonth = month(2026, 9);
 
 const task: EvalTask = {
   name: "patent-negative",
   kind: "patent-rd",
   firstSequence: 201,
+  // The acceptance criteria a machine can decide (task.md); the grader keeps the wording.
+  expect: {
+    "2026-09": {
+      invoices: [
+        "HYM1AC2026-201 HOMT 1500000 INVOICE 2p | Monthly fee for delegation of technology development",
+        "HYM1AC2026-202 HOGV 300000 INVOICE 2p | Monthly fee for patent administration",
+        "HYM1AC2026-203 HLAO 45000 DEBIT NOTE 2p | Monthly fee for patent administration",
+        "HYM1AC2026-204 HOGV 12000 INVOICE 2p | Monthly fee for patent administration (New Business)",
+      ],
+      date: "30-Sep-2026",
+      warnings: [
+        "-98,765",
+        "S4",
+      ],
+      notices: 3,
+    },
+  },
   inputs: async () => [
     {
       label: "2026-09",
       file: await makeWorkbook({
-        請求_研究: {
-          C1: "R&D supplies and outsourced work paid by EXAMPLE",
-          C2: "Claim year/month:",
-          D2: claimMonth,
-          C3: "Claim to:",
-          D3: "HOMT",
-          C4: "Claim amount:",
-          D4: 1500000,
-          R1: "Research and Development Fees(New Business)",
-          R2: "Claim year/month:",
-          S2: claimMonth,
-          R3: "Claim to:",
-          S3: "HOMT",
-          R4: "Claim amount:",
-          S4: -98765,
-        },
-        請求_特許: {
-          B2: "Claim year/month:",
-          C2: claimMonth,
-          B5: "Claim amount:",
-          C6: "HOGV",
-          D6: 300000,
-          C7: "HOGV2",
-          D7: 0,
-          C8: "HLAO",
-          D8: 45000,
-          C9: "Total",
-          D9: 345000,
-          I5: "Claim amount:",
-          J6: "HOGV",
-          K6: 12000,
-          J7: "Total",
-          K7: 12000,
-        },
+        ...(() => {
+          const { rd, patent } = patentSheets({ year: 2026, month: 9 }, {
+            rd: 1500000,
+            rdNb: -98765,
+            patent: [["HOGV", 300000], ["HOGV2", 0], ["HLAO", 45000]],
+            patentNb: [["HOGV", 12000]],
+          });
+          return { 請求_研究: rd, 請求_特許: patent };
+        })(),
       }),
     },
   ],
