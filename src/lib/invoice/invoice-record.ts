@@ -8,6 +8,8 @@
  * (rule 5). No Dataverse client import: screens read the types from here.
  */
 
+import { STATEMENT_LIMITS, parseStoredStatement, validateStatement, type Statement } from "./statement-record";
+
 export const INVOICE_ENTITY_SET = "hi_invoices";
 export const INVOICE_LOGICAL_NAME = "hi_invoice";
 export const LINE_ENTITY_SET = "hi_invoicelines";
@@ -43,6 +45,8 @@ export const INVOICE_FIELDS = {
   paymentTerms: "hi_paymentterms",
   cancelReason: "hi_cancelreason",
   cancelledOn: "hi_cancelledon",
+  /** JSON: the statement printed as page 2 (`statement-record.ts`). Empty for a one-page invoice. Added 2026-11-26 - Top up. */
+  statement: "hi_statement",
 } as const;
 
 export const INVOICE_LIMITS = {
@@ -56,6 +60,7 @@ export const INVOICE_LIMITS = {
   paymentTerms: 100,
   cancelReason: 1000,
   description: 200,
+  statement: STATEMENT_LIMITS.json,
 } as const;
 
 export const LINE_FIELDS = {
@@ -140,6 +145,8 @@ export interface SavedInvoice {
    * `hi_cancelledon` (a date) cannot say.
    */
   modifiedOn: string;
+  /** Page 2, when the invoice has one. */
+  statement: Statement | null;
 }
 
 export function mapDataverseToInvoice(record: Record<string, unknown>): SavedInvoice {
@@ -168,6 +175,7 @@ export function mapDataverseToInvoice(record: Record<string, unknown>): SavedInv
     createdBy: text("_createdby_value@OData.Community.Display.V1.FormattedValue"),
     createdOn: text("createdon"),
     modifiedOn: text("modifiedon"),
+    statement: parseStoredStatement(record[INVOICE_FIELDS.statement], num(INVOICE_FIELDS.total), text(INVOICE_FIELDS.customerCode)),
   };
 }
 
@@ -180,6 +188,8 @@ export interface IssueRequestItem {
   description: string;
   /** Whole yen, greater than zero. */
   amount: number;
+  /** Page 2, for an invoice that carries its breakdown (R&D reimbursement). */
+  statement?: Statement;
 }
 
 export interface IssueRequest {
@@ -232,7 +242,13 @@ export function validateIssueRequest(body: unknown): IssueValidation {
     if (typeof amount !== "number" || !Number.isInteger(amount) || amount <= 0 || amount > 9_999_999_999) {
       return { ok: false, error: `The amount for ${claimTo} is not valid.` };
     }
-    items.push({ claimTo, title: r.title, description, amount });
+    let statement: Statement | undefined;
+    if (r.statement !== undefined && r.statement !== null) {
+      const checked = validateStatement(r.statement, amount, claimTo);
+      if (!checked.ok) return { ok: false, error: `${claimTo}: ${checked.error}` };
+      statement = checked.value;
+    }
+    items.push({ claimTo, title: r.title, description, amount, ...(statement ? { statement } : {}) });
   }
   return { ok: true, value: { invoiceDate, monthLabel, items } };
 }

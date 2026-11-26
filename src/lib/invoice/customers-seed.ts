@@ -3,10 +3,12 @@ import type { CustomerInput } from "./customer-record";
 /**
  * **Starter data for the customer master**, offered by a button on Admin > Customers for the
  * ones not registered yet - not read by the invoice screen. Copied from issued documents:
- * HYM1AC2026-182 / -183 / -184 (expenses) and -186 / -188 / -189 / -190 (patent and R&D).
+ * HYM1AC2026-182 / -183 / -184 (expenses), -186 / -188 / -189 / -190 (patent and R&D) and
+ * HYM1AC2025-094 (HOMS, expenses, 2026-11-26).
  *
- * HOMS (with HUSA) and the rest are not here on purpose: an address is not something to
- * invent. They are registered on the screen as they become known.
+ * HUSA and the rest are not here on purpose: an address is not something to invent. They are
+ * registered on the screen as they become known - "Add from invoice PDF" reads one off an
+ * issued document (`customer-from-pdf.ts`).
  */
 export const STARTER_CUSTOMERS: CustomerInput[] = [
   {
@@ -32,6 +34,14 @@ export const STARTER_CUSTOMERS: CustomerInput[] = [
     tradingPartnerId: "HMSJ(ex-CG12)",
     paymentTerms: "Bank Transfer",
     defaultTitles: { expense: "INVOICE", "patent-rd": "INVOICE" },
+  },
+  {
+    code: "HOMS",
+    name: "HOYA MEMORY DISK SINGAPORE",
+    addressLines: ["10 Tampines Industrial Crescent, Singapore 528603"],
+    tradingPartnerId: "HOMS(ex-CG11)",
+    paymentTerms: "Bank Transfer",
+    defaultTitles: { expense: "DEBIT NOTE", "patent-rd": "INVOICE" },
   },
   {
     code: "HOMT",

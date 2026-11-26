@@ -11,6 +11,22 @@ Role Permissions / Setup (ユーザー・請求書・取引先の各テーブル
 **`/invoices` (段階 1, 2026-11-16)**: 立替費用 Excel (シート `請求_出向者立替費用`) をアップロード →
 表題 (INVOICE / DEBIT NOTE) を行ごとに選ぶ → 請求書 PDF を作る。部品は `lib/invoice/` (`claim-sheet` =
 Excel 読込、`build-pdf` = PDF、`invoice-number` = `HYM1AC{会計年度}-{連番}`、会計年度は 4/1 始まり)。
+**R&D 立替 (2026-11-26)**: 同じブックのシート `請求_立替研究` があれば、/invoices の表の最後に 1 行足す (HOMT、
+`Monthly fee for delegation of technology development(reimbursement)`)。**1 つの PDF の 1 ページ目が請求書、2 ページ目 (横) が
+A/C コード表** (`rd-reimbursement-sheet.ts` = 読込、`statement-record.ts` = 2 ページ目のデータ、`build-pdf.ts` の `drawStatementPage`)。
+2 ページ目は `hi_invoice.hi_statement` (JSON) に保存して PDF を作り直す (**列は Top up で追加**)。日本語の科目名は
+フォントを埋め込まず、ブラウザの canvas で画像にして貼る (`render-pdf.ts` の `rasterizeText`)。表の Total = Claim amount を確かめる。
+**R&D の明細 (2026-11-26)**: Patent & R&D の R&D と R&D (New Business) (HOMT、例 186 / 187) も 2 ページ目に `請求_研究` の部署別の表
+(`R&D_2610.pdf` と同じ。`patent-sheet.ts` の `readRdStatement`、`drawDepartmentTable`) を付ける。行は `印刷用ﾌｨﾙﾀｰ` が 印刷 のものだけ
+(非表示 なのに金額がある行は止める)。Claim amount = 1.1 × 表の Total を確かめる。表が無ければ 1 ページで発行し警告を出す。
+`xlsx-sheet.ts` は `<v xml:space="preserve">` (前後に空白のある文字) も読む (2026-11-26 まで空として読んでいた)。
+**経費の明細 (2026-11-26)**: /invoices の経費の請求書 (182〜184 など) にも 2 ページ目を付ける。中身は月 1 枚の `Expenses paid by HOYA_YYYYMM`
+(請求先の一覧 + A/C × 会社の表) で、全社分を同じページとして各請求書に付ける (`claim-sheet.ts` の `readExpenseStatement` / `statementFor`、
+`drawCompanyTable`)。行は金額のある A/C だけ、列は Excel で非表示の列 (`ITC from HMSJ`) を空なら省く (`isColumnHidden`)。
+**Patent の明細 (2026-11-26)**: Patent / Patent (New Business) の請求書 (188〜193) にも、`請求_特許` の各ブロックから 2 ページ目を付ける
+(請求先の一覧 = 1.05 × 配賦額・配賦率、Allocation ratio の行、知財チームの A/C 表。`readPatentStatement` / `drawAllocationHead`)。
+見本の PDF (Patent_2610.pdf) が無いので、配置はシートどおりに作った。配賦額の和 = 表の Total、各請求額 = 1.05 × 配賦額 (±1 円) を確かめる。
+2 ページ目の種類は `Statement.layout` (`account` / `department` / `companies` / `allocation`)。
 **段階 2 (2026-11-18、テーブルは `Invoice-Portal` ソリューションに作成済み)**: 発行すると `hi_invoice` / `hi_invoiceline` に保存し、
 連番は `hi_invoicesequence` から自動採番 (`lib/invoice/sequence.ts`、`If-Match` で重複なし、年度内 999 まで)。
 保存済み一覧・PDF 再生成・取消 (`/invoices`)。作成・取消とも Admin / F&A Admin (`mayCancelInvoices`)。
@@ -24,7 +40,10 @@ Dataverse のチームにし、セキュリティロール `Invoice Portal Edito
 テーブルの作成先ソリューションは環境変数 `DATAVERSE_SOLUTION` (`InvoicePortal`)。未設定なら既定ソリューションに入る。
 **取引先マスタ**: Admin > Customers (`/admin/customers`, 行 `admin-customers`) で登録し、Dataverse の `hi_invoicecustomer`
 (Admin > Setup > Invoice Customer table で作る。組織所有) に入る。`code` が Excel の「Claim to」と一致する鍵で、重複不可。
-`customers-seed.ts` の既知の会社 (HLAM / HOGV / HOMS-J / HOMT / HOGV2 / HLAO) のうち未登録のものをボタンで投入できる。
+`customers-seed.ts` の既知の会社 (HLAM / HOGV / HOMS / HOMS-J / HOMT / HOGV2 / HLAO) のうち未登録のものをボタンで投入できる。
+**Add from invoice PDF (2026-11-26)**: 発行済みの請求書 PDF の「To:」欄から Add の入力欄を埋める (`customer-from-pdf.ts` = 読み取り、
+`customer-from-pdf-browser.ts` = pdf.js でブラウザ内だけで開く。保存は Save を押したとき)。コードは Trading Partner ID からの推測
+(HMSJ ≠ HOMS-J のように Claim to と違うことがある)。同じ Trading Partner ID か名前の会社が登録済みなら、その会社の編集を開くだけ。
 取引先ごとに **請求書の種類別の既定の表題** (`defaultTitles`、列 `hi_defaulttitles`) を持つ (例: HLAO の Patent & R&D は DEBIT NOTE)。
 **Patent & R&D (`/invoices/patent-rd`、2026-11-18)**: `特許・研究費用計算(FY….xlsm)` のシート `請求_研究` と `請求_特許` から、
 R&D (HOMT) / Patent (HOGV, HOGV2, HLAO) と、それぞれの New Business 分で月 8 枚前後を発行する。同じ番号・保存・一覧・取消の仕組み

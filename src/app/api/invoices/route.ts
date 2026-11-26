@@ -149,6 +149,8 @@ export async function POST(request: NextRequest) {
           [INVOICE_FIELDS.customerAddress]: customer.addressLines.join("\n"),
           [INVOICE_FIELDS.customerTradingPartnerId]: customer.tradingPartnerId,
           [INVOICE_FIELDS.paymentTerms]: customer.paymentTerms,
+          // Only when there is a page 2: a one-page invoice must still save before the column is topped up.
+          ...(item.statement ? { [INVOICE_FIELDS.statement]: JSON.stringify(item.statement) } : {}),
         });
         headerId = String(header[INVOICE_FIELDS.id]);
 
@@ -165,7 +167,14 @@ export async function POST(request: NextRequest) {
         console.error(`[Invoices API] Could not save ${item.claimTo}:`, error);
         // A header without its line is not an invoice: take it back if possible.
         if (headerId) await deleteDataverseRecord(token, INVOICE_ENTITY_SET, headerId).catch(() => undefined);
-        failed.push({ claimTo: item.claimTo, index, error: "It could not be saved." });
+        const missingColumn = item.statement && String((error as { detail?: unknown })?.detail ?? error).includes(INVOICE_FIELDS.statement);
+        failed.push({
+          claimTo: item.claimTo,
+          index,
+          error: missingColumn
+            ? "The invoice table has no column for the statement page yet. Run Admin > Setup > Invoice tables (Top up) first."
+            : "It could not be saved.",
+        });
       }
     }
 

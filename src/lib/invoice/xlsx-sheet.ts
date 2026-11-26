@@ -14,6 +14,9 @@
 /** A sheet that cannot be read says why, in the words the person at the keyboard needs. */
 export class SheetReadError extends Error {}
 
+/** The workbook has no sheet of that name - a reader of an optional sheet catches this one alone. */
+export class SheetNotFoundError extends SheetReadError {}
+
 export type CellValue = { kind: "number"; value: number } | { kind: "string"; value: string };
 
 export interface SheetCells {
@@ -25,6 +28,8 @@ export interface SheetCells {
   textOf(ref: string): string;
   /** Every cell down to `maxRow` whose text (as `textOf` gives it) passes `isMatch`, left to right, then top to bottom. */
   findText(isMatch: (text: string) => boolean, maxRow: number): CellPos[];
+  /** Whether column `col` (1 = A) is hidden in Excel - what the sheet leaves out when it is printed. */
+  isColumnHidden(col: number): boolean;
 }
 
 /** A cell by number: column 1 is A. */
@@ -175,7 +180,7 @@ export async function readSheet(file: ArrayBuffer, sheetName: string, maxRow = 6
   if (!relId) {
     // Most often the wrong file for the screen (the Patent & R&D workbook dropped on Expenses, or the reverse).
     const have = sheetNames.slice(0, 8).join(", ") + (sheetNames.length > 8 ? ", ..." : "");
-    throw new SheetReadError(`Sheet "${sheetName}" not found. Is this the right file for this tab? The sheets in this file: ${have || "(none)"}.`);
+    throw new SheetNotFoundError(`Sheet "${sheetName}" not found. Is this the right file for this tab? The sheets in this file: ${have || "(none)"}.`);
   }
 
   let target: string | null = null;
@@ -192,7 +197,8 @@ export async function readSheet(file: ArrayBuffer, sheetName: string, maxRow = 6
     const parts = ref ? /^([A-Z]+)(\d+)$/.exec(ref) : null;
     if (!ref || !parts || Number(parts[2]) > maxRow) continue;
     const inner = m[2] ?? "";
-    const v = /<v>([\s\S]*?)<\/v>/.exec(inner);
+    // `<v xml:space="preserve">` is how Excel saves text with a leading or trailing space ("Other welfare ").
+    const v = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(inner);
     const inline = /<is>([\s\S]*?)<\/is>/.exec(inner);
     cells.set(ref, {
       t: attr(m[1], "t"),
@@ -239,5 +245,13 @@ export async function readSheet(file: ArrayBuffer, sheetName: string, maxRow = 6
     }
     return out.sort((a, b) => a.col - b.col || a.row - b.row);
   };
-  return { sheetName: actualName ?? sheetName, valueOf, textOf, findText };
+  const hiddenCols = new Set<number>();
+  for (const m of sheetXml.matchAll(/<col\b[^>]*>/g)) {
+    if (attr(m[0], "hidden") !== "1" && attr(m[0], "hidden") !== "true") continue;
+    const min = Number(attr(m[0], "min"));
+    const max = Math.min(Number(attr(m[0], "max")), 200);
+    for (let c = min; c <= max; c++) hiddenCols.add(c);
+  }
+  const isColumnHidden = (col: number) => hiddenCols.has(col);
+  return { sheetName: actualName ?? sheetName, valueOf, textOf, findText, isColumnHidden };
 }
