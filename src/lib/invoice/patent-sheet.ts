@@ -516,6 +516,18 @@ function readPatentStatement(cells: SheetCells, sheet: string, heading: CellPos,
   };
 }
 
+/**
+ * Whether the block of this "Claim to:" is New Business - its heading (the lines above it in the
+ * same column: `Research and Development Fees(New Business)`) says so. By the words, not the
+ * column, so a block that moved with an inserted column is still recognised.
+ */
+function isNewBusinessBlock(cells: SheetCells, claimTo: CellPos): boolean {
+  for (let r = Math.max(1, claimTo.row - 3); r < claimTo.row; r++) {
+    if (/new\s*business/i.test(cells.textOf(refOf(claimTo.col, r)))) return true;
+  }
+  return false;
+}
+
 /** A block's page as one invoice's page 2. */
 const withPage = (lines: PatentRdLine[], page: Statement | null): PatentRdLine[] =>
   page
@@ -550,6 +562,13 @@ export async function parsePatentRdWorkbook(file: ArrayBuffer): Promise<ParsedPa
   // block may be deleted from the sheet: a single "Claim to:" is the R&D block alone. Two or more are
   // read by position as before, and anything that cannot be told apart is still refused.
   const rdToLabels = rd.findText((t) => t === "Claim to:", 20);
+  // Its heading says New Business, or it sits where the New Business block does (column R or right of it).
+  if (rdToLabels.length === 1 && (isNewBusinessBlock(rd, rdToLabels[0]) || rdToLabels[0].col >= colIndex("R"))) {
+    // The one block left is New Business: reading it as R&D would issue the wrong invoice.
+    throw new SheetReadError(
+      `${RD_SHEET_NAME} has only the R&D (New Business) block (${refOf(rdToLabels[0].col, rdToLabels[0].row)}); the R&D block is missing. Restore it, or put 0 in its Claim amount.`
+    );
+  }
   const [rdTo, rdNbTo]: [CellPos, CellPos | null] =
     rdToLabels.length === 1
       ? [rdToLabels[0], null]
@@ -565,7 +584,9 @@ export async function parsePatentRdWorkbook(file: ArrayBuffer): Promise<ParsedPa
     ? readSingleBlock(rd, RD_SHEET_NAME, rdNbTo, "rd-nb")
     : {
         lines: [],
-        warnings: [`${RD_SHEET_NAME}: there is no R&D (New Business) block (only one "Claim to:"), so no R&D (New Business) invoice is made.`],
+        warnings: [
+          `${RD_SHEET_NAME}: there is no R&D (New Business) block (only one "Claim to:", in ${refOf(rdTo.col, rdTo.row)}, read as R&D), so no R&D (New Business) invoice is made.`,
+        ],
       };
 
   return {

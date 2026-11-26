@@ -25,6 +25,8 @@ const task: EvalTask = {
       notices: 3,
       pdfContains: { "HYM1AC2026-701": ["= 1.1", "¥800,000", "Sample Lab A"] },
     },
+    // /cp review 2026-11-26: with only the New Business block left, it must not be read as R&D.
+    "only-nb-left": { error: "has only the R&D (New Business) block" },
   },
   inputs: async () => {
     const { rd, patent } = patentSheets({ year: 2026, month: 11 }, {
@@ -36,7 +38,12 @@ const task: EvalTask = {
     });
     // The New Business block deleted: every cell in columns R to W (the print filter in Y stays).
     const withoutNb = Object.fromEntries(Object.entries(rd).filter(([ref]) => !/^[R-W]\d+$/.test(ref)));
-    return [{ label: "2026-11", file: await makeWorkbook({ 請求_研究: withoutNb, 請求_特許: patent }) }];
+    // The other way round: the R&D block (columns C-H) deleted, New Business left.
+    const onlyNb = Object.fromEntries(Object.entries(rd).filter(([ref]) => !/^[C-H]\d+$/.test(ref)));
+    return [
+      { label: "2026-11", file: await makeWorkbook({ 請求_研究: withoutNb, 請求_特許: patent }) },
+      { label: "only-nb-left", file: await makeWorkbook({ 請求_研究: onlyNb, 請求_特許: patent }) },
+    ];
   },
 };
 export default task;
